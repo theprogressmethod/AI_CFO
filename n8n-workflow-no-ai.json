@@ -1,0 +1,150 @@
+{
+  "name": "Financial Statement Processor - Fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryData": true,
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract and parse Excel files from the webhook\nconst items = [];\nconst binaryData = $input.item.binary;\n\nif (!binaryData) {\n  throw new Error('No files received');\n}\n\n// Process each uploaded file\nfor (const [key, file] of Object.entries(binaryData)) {\n  const buffer = await this.helpers.binaryToBuffer(file);\n  const XLSX = require('xlsx');\n  const workbook = XLSX.read(buffer);\n  \n  // Store workbook data for processing\n  items.push({\n    json: {\n      fileName: file.fileName,\n      sheets: workbook.SheetNames,\n      workbook: JSON.stringify(workbook)\n    },\n    binary: {\n      data: file\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "parse-excel",
+      "name": "Parse Excel Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract financial data from Excel sheets\nconst XLSX = require('xlsx');\nconst workbook = JSON.parse($input.item.json.workbook);\nconst errors = [];\nconst processedData = [];\n\nfor (const sheetName of $input.item.json.sheets) {\n  try {\n    const sheet = workbook.Sheets[sheetName];\n    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });\n    \n    // Detect statement type\n    let statementType = '';\n    if (sheetName.toLowerCase().includes('income') || sheetName.toLowerCase().includes('p&l') || sheetName.toLowerCase().includes('profit')) {\n      statementType = 'Income Statement';\n    } else if (sheetName.toLowerCase().includes('balance')) {\n      statementType = 'Balance Sheet';\n    } else {\n      // Try to detect from content\n      const content = JSON.stringify(data).toLowerCase();\n      if (content.includes('revenue') || content.includes('expense')) {\n        statementType = 'Income Statement';\n      } else if (content.includes('assets') || content.includes('liabilities')) {\n        statementType = 'Balance Sheet';\n      } else {\n        statementType = 'Unknown';\n      }\n    }\n    \n    // Find period headers and dates\n    let periodRow = -1;\n    let dateRows = [];\n    let periods = [];\n    \n    for (let i = 0; i < Math.min(10, data.length); i++) {\n      const row = data[i];\n      if (row && row.some(cell => cell && cell.toString().toLowerCase().includes('period'))) {\n        periodRow = i;\n      }\n      if (row && row.some(cell => cell && (cell.toString().toLowerCase().includes('date') || cell instanceof Date))) {\n        dateRows.push(i);\n      }\n    }\n    \n    // Extract periods\n    if (periodRow >= 0) {\n      const periodHeaders = data[periodRow];\n      for (let col = 2; col < periodHeaders.length; col++) {\n        if (periodHeaders[col] && !periodHeaders[col].toString().includes('%')) {\n          const dateRowData = dateRows.map(r => data[r][col]);\n          periods.push({\n            column: col,\n            header: periodHeaders[col],\n            dates: dateRowData.filter(d => d)\n          });\n        }\n      }\n    }\n    \n    // Find data start row (usually has 'Code' or account names)\n    let dataStartRow = -1;\n    for (let i = 0; i < Math.min(15, data.length); i++) {\n      if (data[i] && (data[i][0] === 'Code' || (data[i][1] && data[i][1].toString().includes('Account')))) {\n        dataStartRow = i + 1;\n        break;\n      }\n    }\n    \n    if (dataStartRow === -1) {\n      errors.push(`Could not find data start in sheet ${sheetName}`);\n      continue;\n    }\n    \n    // Process financial data\n    for (let row = dataStartRow; row < data.length; row++) {\n      const rowData = data[row];\n      if (!rowData || !rowData[0]) continue;\n      \n      const accountCode = rowData[0];\n      const accountName = rowData[1];\n      \n      if (!accountName || accountName.toString().toLowerCase().includes('total')) {\n        continue; // Skip total rows\n      }\n      \n      // Process each period\n      for (const period of periods) {\n        const value = rowData[period.column];\n        const percentValue = rowData[period.column + 1]; // Usually % is next column\n        \n        if (value !== null && value !== undefined && value !== '') {\n          processedData.push({\n            statementType,\n            accountCode,\n            accountName,\n            period: period.header,\n            dates: period.dates,\n            value: parseFloat(value) || value,\n            percent: parseFloat(percentValue) || null,\n            sourceSheet: sheetName,\n            sourceFile: $input.item.json.fileName\n          });\n        }\n      }\n    }\n    \n  } catch (error) {\n    errors.push(`Error processing sheet ${sheetName}: ${error.message}`);\n  }\n}\n\nreturn {\n  json: {\n    processedData,\n    errors,\n    summary: {\n      totalRecords: processedData.length,\n      sheets: $input.item.json.sheets.length,\n      errorCount: errors.length\n    }\n  }\n};"
+      },
+      "id": "extract-data",
+      "name": "Extract Financial Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Transform data without AI for now - simple transformation\nconst processedData = $input.item.json.processedData || [];\nconst errors = $input.item.json.errors || [];\nconst transformedData = [];\nconst transformationNotes = [];\nconst decisions = [];\n\n// Process each data item\nfor (const item of processedData) {\n  try {\n    // Parse date\n    let date = null;\n    let year = null;\n    let month = null;\n    \n    if (item.dates && item.dates.length > 0) {\n      const dateStr = item.dates[0];\n      if (dateStr) {\n        const d = new Date(dateStr);\n        if (!isNaN(d.getTime())) {\n          year = d.getFullYear();\n          month = d.getMonth() + 1;\n          date = `${year}-${String(month).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;\n        }\n      }\n    }\n    \n    // Default date if not found\n    if (!date) {\n      const now = new Date();\n      year = now.getFullYear();\n      month = now.getMonth() + 1;\n      date = `${year}-${String(month).padStart(2, '0')}-01`;\n      decisions.push(`Used current date for items without date: ${date}`);\n    }\n    \n    // Clean up values\n    let value = item.value;\n    if (typeof value === 'string') {\n      value = parseFloat(value.replace(/[^0-9.-]/g, ''));\n    }\n    \n    let percent = item.percent;\n    if (percent && percent > 1) {\n      percent = percent / 100; // Convert to decimal if needed\n      decisions.push('Converted percentage from whole number to decimal');\n    }\n    \n    transformedData.push({\n      date: date,\n      year: year,\n      month: month,\n      statementType: item.statementType || 'Unknown',\n      accountCode: String(item.accountCode || ''),\n      accountName: String(item.accountName || ''),\n      value: value || 0,\n      percent: percent || 0\n    });\n    \n  } catch (error) {\n    transformationNotes.push(`Error transforming item: ${error.message}`);\n  }\n}\n\n// Add summary notes\nif (transformedData.length > 0) {\n  transformationNotes.push(`Successfully transformed ${transformedData.length} records`);\n}\n\nif (errors.length > 0) {\n  transformationNotes.push(`${errors.length} errors were encountered during extraction`);\n}\n\n// Sort data by date, statement type, and account\ntransformedData.sort((a, b) => {\n  if (a.date !== b.date) return a.date.localeCompare(b.date);\n  if (a.statementType !== b.statementType) return a.statementType.localeCompare(b.statementType);\n  return a.accountCode.localeCompare(b.accountCode);\n});\n\nreturn {\n  json: {\n    transformedData,\n    transformationNotes,\n    decisions,\n    originalErrors: errors\n  }\n};"
+      },
+      "id": "transform-data",
+      "name": "Transform Data (No AI)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Prepare final output\nconst transformedData = $input.item.json.transformedData || [];\nconst notes = $input.item.json.transformationNotes || [];\nconst decisions = $input.item.json.decisions || [];\n\n// Create Excel output\nconst XLSX = require('xlsx');\nconst ws = XLSX.utils.json_to_sheet(transformedData);\nconst wb = XLSX.utils.book_new();\nXLSX.utils.book_append_sheet(wb, ws, 'Raw Financials');\n\n// Add notes sheet if there are any\nif (notes.length > 0 || decisions.length > 0) {\n  const notesData = [\n    ['Transformation Notes'],\n    ...notes.map(n => [n]),\n    [''],\n    ['Decisions Made'],\n    ...decisions.map(d => [d])\n  ];\n  const notesWs = XLSX.utils.aoa_to_sheet(notesData);\n  XLSX.utils.book_append_sheet(wb, notesWs, 'Processing Notes');\n}\n\nconst excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });\n\nreturn {\n  json: {\n    success: true,\n    summary: {\n      totalRecords: transformedData.length,\n      dateRange: transformedData.length > 0 ? {\n        from: transformedData[0]?.date,\n        to: transformedData[transformedData.length - 1]?.date\n      } : null,\n      statementTypes: [...new Set(transformedData.map(d => d.statementType))],\n      notes: notes,\n      decisions: decisions\n    },\n    data: transformedData\n  },\n  binary: {\n    excel: {\n      data: excelBuffer.toString('base64'),\n      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',\n      fileName: `raw_financials_${new Date().toISOString().split('T')[0]}.xlsx`\n    }\n  }\n};"
+      },
+      "id": "prepare-output",
+      "name": "Prepare Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Excel Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Excel Files": {
+      "main": [
+        [
+          {
+            "node": "Extract Financial Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Financial Data": {
+      "main": [
+        [
+          {
+            "node": "Transform Data (No AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Data (No AI)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Output": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

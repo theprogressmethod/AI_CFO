@@ -1,290 +1,313 @@
 <script>
-  import '../app.css';
-  import { onMount } from 'svelte';
-  import * as XLSX from 'xlsx';
+	let files = [];
+	let processing = false;
+	let results = null;
+	let error = null;
+	let statusMessage = '';
 
-  let files = [];
-  let loading = false;
-  let results = null;
-  let error = null;
-  let dragover = false;
-  let n8nWebhookUrl = '';
+	// Handle file selection
+	function handleFileSelect(event) {
+		const selectedFiles = Array.from(event.target.files);
+		if (files.length + selectedFiles.length > 5) {
+			alert('Maximum 5 files allowed');
+			return;
+		}
+		files = [...files, ...selectedFiles];
+	}
 
-  onMount(() => {
-    // Set the n8n webhook URL - replace with your actual n8n webhook URL
-    // For local n8n: http://localhost:5678/webhook/process-financials
-    // For cloud n8n: https://your-instance.app.n8n.cloud/webhook/process-financials
-    n8nWebhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/process-financials';
-  });
+	// Handle drag and drop
+	function handleDrop(event) {
+		event.preventDefault();
+		const droppedFiles = Array.from(event.dataTransfer.files);
+		if (files.length + droppedFiles.length > 5) {
+			alert('Maximum 5 files allowed');
+			return;
+		}
+		files = [...files, ...droppedFiles];
+	}
 
-  function handleDrop(e) {
-    e.preventDefault();
-    dragover = false;
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => 
-      f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-    );
-    files = [...files, ...droppedFiles];
-  }
+	function handleDragOver(event) {
+		event.preventDefault();
+	}
 
-  function handleFileSelect(e) {
-    const selectedFiles = Array.from(e.target.files).filter(f => 
-      f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-    );
-    files = [...files, ...selectedFiles];
-  }
+	// Remove a file from the list
+	function removeFile(index) {
+		files = files.filter((_, i) => i !== index);
+	}
 
-  function removeFile(index) {
-    files = files.filter((_, i) => i !== index);
-  }
+	// Process files
+	async function processFiles() {
+		if (files.length === 0) {
+			alert('Please select at least one file');
+			return;
+		}
 
-  async function processFiles() {
-    if (files.length === 0) {
-      error = 'Please select at least one file';
-      return;
-    }
+		processing = true;
+		error = null;
+		results = null;
+		statusMessage = 'Processing files...';
 
-    loading = true;
-    error = null;
-    results = null;
+		try {
+			// For now, we'll process each file individually
+			// In production, you might want to batch process
+			const allResults = [];
+			
+			for (const file of files) {
+				statusMessage = `Processing ${file.name}...`;
+				const formData = new FormData();
+				formData.append('file', file);
 
-    try {
-      const formData = new FormData();
-      
-      // Add each file to the form data
-      for (let i = 0; i < files.length; i++) {
-        formData.append(`file_${i}`, files[i]);
-      }
+				const response = await fetch('http://localhost:5678/webhook/process-financials', {
+					method: 'POST',
+					body: formData
+				});
 
-      const response = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        body: formData
-      });
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
 
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
+				const data = await response.json();
+				
+				// If the response is an array, add all items
+				if (Array.isArray(data)) {
+					allResults.push(...data);
+				} else if (data.data && Array.isArray(data.data)) {
+					allResults.push(...data.data);
+				} else {
+					// Single object response
+					allResults.push(data);
+				}
+			}
 
-      const data = await response.json();
-      results = data;
+			results = allResults;
+			statusMessage = `Successfully processed ${files.length} file(s)`;
+		} catch (err) {
+			console.error('Processing error:', err);
+			error = err.message;
+			statusMessage = 'Error processing files';
+		} finally {
+			processing = false;
+		}
+	}
 
-      // If there's binary data, convert it for download
-      if (data.binary && data.binary.excel) {
-        results.downloadReady = true;
-      }
+	// Test connection to n8n
+	async function testConnection() {
+		try {
+			const response = await fetch('http://localhost:5678/webhook/process-financials', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ test: true })
+			});
+			
+			if (response.ok) {
+				alert('✅ Successfully connected to n8n!');
+			} else {
+				alert(`⚠️ n8n responded with status: ${response.status}`);
+			}
+		} catch (err) {
+			alert(`❌ Could not connect to n8n: ${err.message}`);
+		}
+	}
 
-    } catch (err) {
-      error = err.message || 'An error occurred while processing the files';
-      console.error('Processing error:', err);
-    } finally {
-      loading = false;
-    }
-  }
+	// Download results as Excel
+	async function downloadExcel() {
+		if (!results || results.length === 0) return;
 
-  function downloadExcel() {
-    if (!results || !results.binary || !results.binary.excel) return;
+		try {
+			// Convert JSON to CSV for Excel
+			const headers = Object.keys(results[0]);
+			const csvContent = [
+				headers.join(','),
+				...results.map(row => 
+					headers.map(header => {
+						const value = row[header];
+						// Handle values with commas or quotes
+						if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+							return `"${value.replace(/"/g, '""')}"`;
+						}
+						return value;
+					}).join(',')
+				)
+			].join('\n');
 
-    const binaryData = results.binary.excel.data;
-    const byteCharacters = atob(binaryData);
-    const byteNumbers = new Array(byteCharacters.length);
-    
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-    });
-    
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = results.binary.excel.fileName || 'raw_financials.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
-  }
+			// Create blob and download
+			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+			const link = document.createElement('a');
+			const url = URL.createObjectURL(blob);
+			link.setAttribute('href', url);
+			link.setAttribute('download', 'financial_data.csv');
+			link.style.visibility = 'hidden';
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		} catch (err) {
+			console.error('Download error:', err);
+			alert('Error downloading file');
+		}
+	}
 
-  function formatValue(value) {
-    if (typeof value === 'number') {
-      return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    }
-    return value;
-  }
+	// Clear all data
+	function clearAll() {
+		files = [];
+		results = null;
+		error = null;
+		statusMessage = '';
+	}
 </script>
 
-<div class="container">
-  <header class="header">
-    <h1>Financial Statement Processor</h1>
-    <p>Upload Excel files containing Income Statements and Balance Sheets</p>
-  </header>
+<main class="container mx-auto p-8 max-w-6xl">
+	<h1 class="text-4xl font-bold mb-8 text-center">AI CFO Financial Processor</h1>
+	
+	<!-- Connection Test Button -->
+	<div class="mb-6 text-center">
+		<button 
+			on:click={testConnection}
+			class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
+		>
+			Test n8n Connection
+		</button>
+	</div>
 
-  <div 
-    class="upload-area {dragover ? 'dragover' : ''}"
-    on:drop={handleDrop}
-    on:dragover|preventDefault={() => dragover = true}
-    on:dragleave={() => dragover = false}
-    on:click={() => document.getElementById('file-input').click()}
-  >
-    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; opacity: 0.5;">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-      <polyline points="17 8 12 3 7 8"></polyline>
-      <line x1="12" y1="3" x2="12" y2="15"></line>
-    </svg>
-    <h2>Drop Excel files here or click to browse</h2>
-    <p style="color: var(--text-light); margin-top: 0.5rem;">
-      Supports .xlsx and .xls files (max 5 files)
-    </p>
-    <input 
-      id="file-input"
-      type="file" 
-      accept=".xlsx,.xls" 
-      multiple
-      on:change={handleFileSelect}
-      style="display: none;"
-    />
-  </div>
+	<!-- File Upload Section -->
+	<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+		<h2 class="text-2xl font-semibold mb-4">Upload Financial Statements</h2>
+		
+		<!-- Drag and Drop Area -->
+		<div 
+			on:drop={handleDrop}
+			on:dragover={handleDragOver}
+			class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer"
+		>
+			<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+			</svg>
+			<p class="mb-2">Drag and drop Excel files here, or</p>
+			<label class="cursor-pointer">
+				<input 
+					type="file" 
+					accept=".xlsx,.xls" 
+					multiple 
+					on:change={handleFileSelect}
+					class="hidden"
+				>
+				<span class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block">
+					Browse Files
+				</span>
+			</label>
+			<p class="text-sm text-gray-500 mt-2">Maximum 5 files • Excel format (.xlsx, .xls)</p>
+		</div>
 
-  {#if files.length > 0}
-    <div class="file-list">
-      {#each files as file, i}
-        <div class="file-item">
-          <div>
-            <strong>{file.name}</strong>
-            <span style="color: var(--text-light); margin-left: 1rem;">
-              {(file.size / 1024).toFixed(1)} KB
-            </span>
-          </div>
-          <button 
-            class="btn btn-secondary" 
-            on:click={() => removeFile(i)}
-            style="padding: 0.5rem 1rem; font-size: 0.875rem;"
-          >
-            Remove
-          </button>
-        </div>
-      {/each}
-    </div>
+		<!-- Selected Files List -->
+		{#if files.length > 0}
+			<div class="mt-6">
+				<h3 class="font-semibold mb-2">Selected Files ({files.length}/5)</h3>
+				<ul class="space-y-2">
+					{#each files as file, index}
+						<li class="flex items-center justify-between bg-gray-50 p-3 rounded">
+							<span class="text-sm">{file.name}</span>
+							<button 
+								on:click={() => removeFile(index)}
+								class="text-red-500 hover:text-red-700"
+								disabled={processing}
+							>
+								Remove
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 
-    <div style="margin-top: 1.5rem; text-align: center;">
-      <button 
-        class="btn" 
-        on:click={processFiles}
-        disabled={loading || files.length === 0 || files.length > 5}
-      >
-        {#if loading}
-          <span class="loading"></span>
-          Processing...
-        {:else}
-          Process Financial Statements
-        {/if}
-      </button>
-      
-      {#if files.length > 5}
-        <p class="warning-message" style="margin-top: 1rem;">
-          Please select no more than 5 files for this MVP version
-        </p>
-      {/if}
-    </div>
-  {/if}
+		<!-- Action Buttons -->
+		<div class="mt-6 flex gap-4">
+			<button 
+				on:click={processFiles}
+				disabled={processing || files.length === 0}
+				class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:bg-gray-300 transition"
+			>
+				{processing ? 'Processing...' : 'Process Files'}
+			</button>
+			<button 
+				on:click={clearAll}
+				disabled={processing}
+				class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600 disabled:bg-gray-300 transition"
+			>
+				Clear All
+			</button>
+		</div>
+	</div>
 
-  {#if error}
-    <div class="error-message">
-      <strong>Error:</strong> {error}
-    </div>
-  {/if}
+	<!-- Status Message -->
+	{#if statusMessage}
+		<div class="mb-4 p-4 rounded-lg {error ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
+			{statusMessage}
+		</div>
+	{/if}
 
-  {#if results}
-    <div class="results">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2>Processing Results</h2>
-        {#if results.downloadReady}
-          <button class="btn btn-success" on:click={downloadExcel}>
-            Download Excel File
-          </button>
-        {/if}
-      </div>
+	<!-- Error Display -->
+	{#if error}
+		<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-8">
+			<strong>Error:</strong> {error}
+		</div>
+	{/if}
 
-      {#if results.summary}
-        <div class="stats">
-          <div class="stat-card">
-            <div class="stat-label">Total Records</div>
-            <div class="stat-value">{results.summary.totalRecords}</div>
-          </div>
-          {#if results.summary.dateRange && results.summary.dateRange.from}
-            <div class="stat-card">
-              <div class="stat-label">Date Range</div>
-              <div class="stat-value" style="font-size: 1rem;">
-                {results.summary.dateRange.from} to {results.summary.dateRange.to}
-              </div>
-            </div>
-          {/if}
-          {#if results.summary.statementTypes}
-            <div class="stat-card">
-              <div class="stat-label">Statement Types</div>
-              <div class="stat-value" style="font-size: 1rem;">
-                {results.summary.statementTypes.join(', ')}
-              </div>
-            </div>
-          {/if}
-        </div>
+	<!-- Results Table -->
+	{#if results && results.length > 0}
+		<div class="bg-white rounded-lg shadow-md p-6">
+			<div class="flex justify-between items-center mb-4">
+				<h2 class="text-2xl font-semibold">Processed Financial Data</h2>
+				<button 
+					on:click={downloadExcel}
+					class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition flex items-center gap-2"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					</svg>
+					Download Excel
+				</button>
+			</div>
+			
+			<!-- Scrollable Table Container -->
+			<div class="overflow-x-auto">
+				<table class="min-w-full table-auto">
+					<thead class="bg-gray-50">
+						<tr>
+							{#if results[0]}
+								{#each Object.keys(results[0]) as header}
+									<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+										{header}
+									</th>
+								{/each}
+							{/if}
+						</tr>
+					</thead>
+					<tbody class="bg-white divide-y divide-gray-200">
+						{#each results as row, i}
+							<tr class="{i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+								{#each Object.values(row) as value}
+									<td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+										{value || '-'}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			
+			<!-- Results Summary -->
+			<div class="mt-4 text-sm text-gray-600">
+				Showing {results.length} rows
+			</div>
+		</div>
+	{/if}
+</main>
 
-        {#if results.summary.notes && results.summary.notes.length > 0}
-          <div class="notes-section">
-            <h3>Processing Notes</h3>
-            <ul>
-              {#each results.summary.notes as note}
-                <li>{note}</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-
-        {#if results.summary.decisions && results.summary.decisions.length > 0}
-          <div class="notes-section" style="background: #f0f9ff; border-color: #bfdbfe;">
-            <h3 style="color: #1e40af;">Decisions Made</h3>
-            <ul style="color: #1e3a8a;">
-              {#each results.summary.decisions as decision}
-                <li>{decision}</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-      {/if}
-
-      {#if results.data && results.data.length > 0}
-        <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Data Preview (First 10 Records)</h3>
-        <div style="overflow-x: auto;">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Statement</th>
-                <th>Account Code</th>
-                <th>Account Name</th>
-                <th>Value</th>
-                <th>Percent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each results.data.slice(0, 10) as row}
-                <tr>
-                  <td>{row.date}</td>
-                  <td>{row.statementType}</td>
-                  <td>{row.accountCode}</td>
-                  <td>{row.accountName}</td>
-                  <td>{formatValue(row.value)}</td>
-                  <td>{row.percent ? (row.percent * 100).toFixed(2) + '%' : '-'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          {#if results.data.length > 10}
-            <p style="text-align: center; margin-top: 1rem; color: var(--text-light);">
-              Showing 10 of {results.data.length} records. Download the Excel file to see all data.
-            </p>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  {/if}
-</div>
+<style>
+	:global(body) {
+		background: linear-gradient(to bottom right, #f3f4f6, #e5e7eb);
+		min-height: 100vh;
+	}
+</style>

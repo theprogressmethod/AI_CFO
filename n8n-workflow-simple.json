@@ -1,0 +1,85 @@
+{
+  "name": "Financial Processor - Simple Working Version",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryData": true,
+          "rawBody": false
+        }
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "toJson",
+        "options": {
+          "headerRow": true,
+          "sheetName": ".*"
+        }
+      },
+      "id": "spreadsheet",
+      "name": "Spreadsheet File",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Process all Excel data\nconst allItems = $input.all();\nconst transformedData = [];\n\n// Process each item\nfor (const item of allItems) {\n  const data = item.json;\n  \n  // Detect statement type from sheet name if available\n  let statementType = 'Unknown';\n  const sheetName = item.binary?.data?.fileName || '';\n  \n  if (sheetName.toLowerCase().includes('income') || sheetName.toLowerCase().includes('p&l')) {\n    statementType = 'Income Statement';\n  } else if (sheetName.toLowerCase().includes('balance')) {\n    statementType = 'Balance Sheet';\n  }\n  \n  // Check if this looks like financial data\n  if (data['Code'] || data['Account'] || data['Chart Of Accounts']) {\n    // Process the row\n    const accountCode = data['Code'] || data['AccountCode'] || '';\n    const accountName = data['Chart Of Accounts'] || data['Account'] || data['AccountName'] || '';\n    \n    // Look for value columns (usually have dates or 'Period' in header)\n    const valueKeys = Object.keys(data).filter(key => {\n      return !['Code', 'Chart Of Accounts', 'Account', 'AccountCode', 'AccountName'].includes(key) &&\n             !key.includes('%');\n    });\n    \n    // Process each value column\n    for (const key of valueKeys) {\n      const value = data[key];\n      if (value !== null && value !== undefined && value !== '') {\n        // Try to parse date from column name\n        let date = '2024-01-01';\n        let year = 2024;\n        let month = 1;\n        \n        if (key.includes('2024')) {\n          year = 2024;\n        } else if (key.includes('2023')) {\n          year = 2023;\n        }\n        \n        if (key.toLowerCase().includes('jan')) month = 1;\n        else if (key.toLowerCase().includes('feb')) month = 2;\n        else if (key.toLowerCase().includes('mar')) month = 3;\n        else if (key.toLowerCase().includes('apr')) month = 4;\n        else if (key.toLowerCase().includes('may')) month = 5;\n        else if (key.toLowerCase().includes('jun')) month = 6;\n        else if (key.toLowerCase().includes('jul')) month = 7;\n        else if (key.toLowerCase().includes('aug')) month = 8;\n        else if (key.toLowerCase().includes('sep')) month = 9;\n        else if (key.toLowerCase().includes('oct')) month = 10;\n        else if (key.toLowerCase().includes('nov')) month = 11;\n        else if (key.toLowerCase().includes('dec')) month = 12;\n        \n        date = `${year}-${String(month).padStart(2, '0')}-01`;\n        \n        transformedData.push({\n          date: date,\n          year: year,\n          month: month,\n          statementType: statementType,\n          accountCode: String(accountCode),\n          accountName: String(accountName),\n          value: parseFloat(value) || 0,\n          percent: 0,\n          originalColumn: key\n        });\n      }\n    }\n  }\n}\n\n// If no data was transformed, create sample data\nif (transformedData.length === 0) {\n  transformedData.push({\n    date: '2024-01-01',\n    year: 2024,\n    month: 1,\n    statementType: 'Sample',\n    accountCode: 'TEST',\n    accountName: 'Test Account',\n    value: 0,\n    percent: 0,\n    originalColumn: 'No data found'\n  });\n}\n\n// Sort the data\ntransformedData.sort((a, b) => {\n  if (a.date !== b.date) return a.date.localeCompare(b.date);\n  if (a.statementType !== b.statementType) return a.statementType.localeCompare(b.statementType);\n  return a.accountCode.localeCompare(b.accountCode);\n});\n\nreturn [{\n  json: {\n    transformedData: transformedData,\n    totalRecords: transformedData.length,\n    summary: {\n      dateRange: {\n        from: transformedData[0]?.date,\n        to: transformedData[transformedData.length - 1]?.date\n      },\n      statementTypes: [...new Set(transformedData.map(d => d.statementType))]\n    }\n  }\n}];"
+      },
+      "id": "transform",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {
+          "headerRow": true
+        },
+        "jsonData": "={{ JSON.stringify($json.transformedData) }}"
+      },
+      "id": "createExcel",
+      "name": "Create Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Spreadsheet File", "type": "main", "index": 0}]]
+    },
+    "Spreadsheet File": {
+      "main": [[{"node": "Transform Data", "type": "main", "index": 0}]]
+    },
+    "Transform Data": {
+      "main": [[{"node": "Create Excel", "type": "main", "index": 0}]]
+    },
+    "Create Excel": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  }
+}

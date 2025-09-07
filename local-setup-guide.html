@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI CFO - Local Setup Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .alert {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .alert h2 {
+            color: #92400e;
+            margin-bottom: 0.5rem;
+        }
+        .alert p {
+            color: #78350f;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            color: #333;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        .command {
+            background: #1e293b;
+            color: #10b981;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        .button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            margin: 0.5rem 0;
+            transition: all 0.3s;
+            font-weight: 600;
+            text-align: center;
+        }
+        .button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .button.success {
+            background: #10b981;
+        }
+        .button.success:hover {
+            background: #059669;
+        }
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+        .checklist li {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .checklist li:last-child {
+            border-bottom: none;
+        }
+        .check {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #d1d5db;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .check.done {
+            background: #10b981;
+            border-color: #10b981;
+        }
+        .check.done::after {
+            content: '✓';
+            color: white;
+            font-weight: bold;
+        }
+        .status {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            font-weight: 600;
+        }
+        .status.ready {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status.pending {
+            background: #fed7aa;
+            color: #92400e;
+        }
+        .links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 3rem;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 AI CFO Local Setup</h1>
+        
+        <div class="alert">
+            <h2>⚠️ n8n Cloud Workspace Offline</h2>
+            <p>Your n8n cloud trial has expired. No worries! We're using a local n8n instance that's completely free and runs on your machine.</p>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-number">1</span> Start Docker Services</h2>
+            <p>Run this command in Terminal:</p>
+            <div class="command">
+                cd /Users/thomasmulhern/projects/AI_CFO<br>
+                ./start-local.sh
+            </div>
+            <p>Or manually:</p>
+            <div class="command">
+                docker-compose -f docker-compose.dev.yml up -d
+            </div>
+            <div class="status ready">✅ Services will start in ~30 seconds</div>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-number">2</span> Access Your Applications</h2>
+            <div class="links">
+                <a href="http://localhost:5173" target="_blank" class="button">
+                    🌐 Web App
+                    <small style="display:block;font-weight:400;margin-top:0.25rem">localhost:5173</small>
+                </a>
+                <a href="http://localhost:5678" target="_blank" class="button success">
+                    ⚡ n8n Workflow
+                    <small style="display:block;font-weight:400;margin-top:0.25rem">localhost:5678</small>
+                </a>
+            </div>
+            <p style="margin-top:1rem;color:#6b7280">Wait ~30 seconds after starting Docker for services to be ready</p>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-number">3</span> Configure n8n Workflow</h2>
+            <ul class="checklist">
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Open n8n at <strong>http://localhost:5678</strong>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Click <strong>"New Workflow"</strong>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Click menu (⋮) → <strong>"Import from File"</strong>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Select: <code>n8n-financial-workflow.json</code>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Find the <strong>"AI Transform Data"</strong> node (OpenAI)
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Double-click it and add your <strong>OpenAI API key</strong>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Click <strong>"Save"</strong>
+                </li>
+                <li>
+                    <div class="check" onclick="this.classList.toggle('done')"></div>
+                    Toggle the workflow to <strong>"Active"</strong> (top right)
+                </li>
+            </ul>
+            <div class="status pending">⏳ One-time setup (5 minutes)</div>
+        </div>
+
+        <div class="card">
+            <h2><span class="step-number">4</span> Test Your Setup</h2>
+            <ol style="line-height: 1.8;">
+                <li>Go to <strong>http://localhost:5173</strong></li>
+                <li>Upload your Excel financial statements</li>
+                <li>Click <strong>"Process Financial Statements"</strong></li>
+                <li>Download the transformed data!</li>
+            </ol>
+            <div class="status ready">✅ Ready to process files!</div>
+        </div>
+
+        <div class="card">
+            <h2>🛠️ Troubleshooting</h2>
+            <div style="margin-top: 1rem;">
+                <p><strong>If services don't start:</strong></p>
+                <div class="command">
+                    # Check if Docker is running<br>
+                    docker info<br><br>
+                    # View logs<br>
+                    docker-compose -f docker-compose.dev.yml logs<br><br>
+                    # Restart services<br>
+                    docker-compose -f docker-compose.dev.yml restart
+                </div>
+                
+                <p style="margin-top:1.5rem"><strong>If n8n webhook fails:</strong></p>
+                <ul style="margin-left: 1.5rem; color: #4b5563;">
+                    <li>Make sure workflow is "Active" (toggle in top right)</li>
+                    <li>Check the webhook URL matches: <code>http://localhost:5678/webhook/process-financials</code></li>
+                    <li>Verify OpenAI API key is added and saved</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <h2 style="color: white;">🎉 You're All Set!</h2>
+            <p>Your financial processor is running locally with:</p>
+            <ul style="margin: 1rem 0; line-height: 1.8;">
+                <li>✅ No cloud dependencies</li>
+                <li>✅ Free n8n workflow engine</li>
+                <li>✅ Complete data privacy (runs on your machine)</li>
+                <li>✅ Hot reload for development</li>
+            </ul>
+            <p style="margin-top: 1.5rem;">Everything runs in Docker containers, so it's isolated and easy to manage!</p>
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh check for services
+        setTimeout(() => {
+            fetch('http://localhost:5173')
+                .then(() => {
+                    console.log('Web app is running!');
+                })
+                .catch(() => {
+                    console.log('Web app not ready yet...');
+                });
+                
+            fetch('http://localhost:5678')
+                .then(() => {
+                    console.log('n8n is running!');
+                })
+                .catch(() => {
+                    console.log('n8n not ready yet...');
+                });
+        }, 5000);
+    </script>
+</body>
+</html>
