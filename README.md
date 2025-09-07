@@ -18,7 +18,51 @@ A simple web application for processing and transforming financial statements (I
 - **AI**: OpenAI GPT-4 (via n8n)
 - **Deployment**: Vercel
 
-## Setup Instructions
+## 🐳 Docker Deployment (Recommended)
+
+### Quick Start with Docker
+
+1. **Install Docker Desktop**
+   - Download from: https://www.docker.com/products/docker-desktop
+   - Start Docker Desktop
+
+2. **Run with Docker**
+   ```bash
+   # Quick start
+   sh docker-start.sh
+   
+   # Or manually:
+   docker-compose up -d          # Production mode (port 3000)
+   docker-compose -f docker-compose.dev.yml up -d  # Dev mode (port 5173)
+   ```
+
+3. **Access the application**
+   - Web App: http://localhost:3000 (or 5173 for dev)
+   - n8n: http://localhost:5678
+
+4. **Import n8n workflow**
+   - Go to http://localhost:5678
+   - Import `n8n-financial-workflow.json`
+   - Add OpenAI API key
+   - Activate workflow
+
+### Docker Commands
+
+```bash
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+
+# Restart services
+docker-compose restart
+
+# Clean everything
+docker-compose down -v --rmi all
+```
+
+## Setup Instructions (Without Docker)
 
 ### 1. Set up n8n Workflow
 
