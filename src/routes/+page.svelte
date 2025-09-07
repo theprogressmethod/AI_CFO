@@ -48,39 +48,42 @@
 		statusMessage = 'Processing files...';
 
 		try {
-			// For now, we'll process each file individually
-			// In production, you might want to batch process
-			const allResults = [];
+			// Send all files to n8n for processing
+			// n8n should return a single consolidated JSON array
+			const formData = new FormData();
 			
-			for (const file of files) {
-				statusMessage = `Processing ${file.name}...`;
-				const formData = new FormData();
-				formData.append('file', file);
+			// Append all files to the form data
+			files.forEach((file, index) => {
+				formData.append(`file_${index}`, file);
+			});
+			
+			statusMessage = `Processing ${files.length} file(s)...`;
 
-				const response = await fetch('http://localhost:5678/webhook/process-financials', {
-					method: 'POST',
-					body: formData
-				});
+			const response = await fetch('http://localhost:5678/webhook/process-financials', {
+				method: 'POST',
+				body: formData
+			});
 
-				if (!response.ok) {
-					throw new Error(`HTTP error! status: ${response.status}`);
-				}
-
-				const data = await response.json();
-				
-				// If the response is an array, add all items
-				if (Array.isArray(data)) {
-					allResults.push(...data);
-				} else if (data.data && Array.isArray(data.data)) {
-					allResults.push(...data.data);
-				} else {
-					// Single object response
-					allResults.push(data);
-				}
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
 			}
 
-			results = allResults;
-			statusMessage = `Successfully processed ${files.length} file(s)`;
+			const data = await response.json();
+			
+			// Expect a single array with all rows from all files
+			// Each row should have the same columns: Date Concat, Year, Month, Financial Statements, Account, Attribute, Value
+			if (Array.isArray(data)) {
+				results = data;
+			} else if (data.data && Array.isArray(data.data)) {
+				results = data.data;
+			} else if (data.results && Array.isArray(data.results)) {
+				results = data.results;
+			} else {
+				// If single object, wrap in array
+				results = [data];
+			}
+
+			statusMessage = `Successfully processed ${files.length} file(s) - ${results.length} total rows`;
 		} catch (err) {
 			console.error('Processing error:', err);
 			error = err.message;
@@ -137,7 +140,7 @@
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
 			link.setAttribute('href', url);
-			link.setAttribute('download', 'financial_data.csv');
+			link.setAttribute('download', 'standardized_financials.csv');
 			link.style.visibility = 'hidden';
 			document.body.appendChild(link);
 			link.click();
@@ -157,33 +160,31 @@
 	}
 </script>
 
-<main class="container mx-auto p-8 max-w-6xl">
-	<h1 class="text-4xl font-bold mb-8 text-center">AI CFO Financial Processor</h1>
-	
-	<!-- Connection Test Button -->
-	<div class="mb-6 text-center">
-		<button 
-			on:click={testConnection}
-			class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
-		>
-			Test n8n Connection
-		</button>
+<main class="container mx-auto p-6 max-w-7xl">
+	<div class="mb-8">
+		<h1 class="text-2xl font-bold mb-2">Financial Statement Processor</h1>
+		<p class="text-gray-600">Transform Excel financial statements into standardized format</p>
 	</div>
-
+	
 	<!-- File Upload Section -->
-	<div class="bg-white rounded-lg shadow-md p-6 mb-8">
-		<h2 class="text-2xl font-semibold mb-4">Upload Financial Statements</h2>
+	<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+		<div class="flex justify-between items-center mb-4">
+			<h2 class="text-lg font-semibold">Upload Files</h2>
+			<button 
+				on:click={testConnection}
+				class="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded hover:bg-gray-200 transition"
+			>
+				Test Connection
+			</button>
+		</div>
 		
 		<!-- Drag and Drop Area -->
 		<div 
 			on:drop={handleDrop}
 			on:dragover={handleDragOver}
-			class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer"
+			class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition"
 		>
-			<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-			</svg>
-			<p class="mb-2">Drag and drop Excel files here, or</p>
+			<p class="text-gray-600 mb-2">Drag and drop Excel files here, or</p>
 			<label class="cursor-pointer">
 				<input 
 					type="file" 
@@ -192,47 +193,47 @@
 					on:change={handleFileSelect}
 					class="hidden"
 				>
-				<span class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block">
+				<span class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition inline-block text-sm">
 					Browse Files
 				</span>
 			</label>
-			<p class="text-sm text-gray-500 mt-2">Maximum 5 files • Excel format (.xlsx, .xls)</p>
+			<p class="text-xs text-gray-500 mt-2">Maximum 5 files • Excel format (.xlsx, .xls)</p>
 		</div>
 
 		<!-- Selected Files List -->
 		{#if files.length > 0}
-			<div class="mt-6">
-				<h3 class="font-semibold mb-2">Selected Files ({files.length}/5)</h3>
-				<ul class="space-y-2">
+			<div class="mt-4">
+				<div class="text-sm font-medium text-gray-700 mb-2">Selected Files ({files.length}/5)</div>
+				<div class="space-y-1">
 					{#each files as file, index}
-						<li class="flex items-center justify-between bg-gray-50 p-3 rounded">
-							<span class="text-sm">{file.name}</span>
+						<div class="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
+							<span>{file.name}</span>
 							<button 
 								on:click={() => removeFile(index)}
-								class="text-red-500 hover:text-red-700"
+								class="text-red-600 hover:text-red-800 text-xs"
 								disabled={processing}
 							>
 								Remove
 							</button>
-						</li>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			</div>
 		{/if}
 
 		<!-- Action Buttons -->
-		<div class="mt-6 flex gap-4">
+		<div class="mt-4 flex gap-3">
 			<button 
 				on:click={processFiles}
 				disabled={processing || files.length === 0}
-				class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:bg-gray-300 transition"
+				class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-300 transition text-sm"
 			>
 				{processing ? 'Processing...' : 'Process Files'}
 			</button>
 			<button 
 				on:click={clearAll}
 				disabled={processing}
-				class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600 disabled:bg-gray-300 transition"
+				class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-50 disabled:bg-gray-100 transition text-sm"
 			>
 				Clear All
 			</button>
@@ -241,42 +242,45 @@
 
 	<!-- Status Message -->
 	{#if statusMessage}
-		<div class="mb-4 p-4 rounded-lg {error ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
+		<div class="mb-4 px-4 py-3 rounded text-sm {error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}">
 			{statusMessage}
 		</div>
 	{/if}
 
 	<!-- Error Display -->
 	{#if error}
-		<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-8">
+		<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6 text-sm">
 			<strong>Error:</strong> {error}
 		</div>
 	{/if}
 
 	<!-- Results Table -->
 	{#if results && results.length > 0}
-		<div class="bg-white rounded-lg shadow-md p-6">
+		<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
 			<div class="flex justify-between items-center mb-4">
-				<h2 class="text-2xl font-semibold">Processed Financial Data</h2>
+				<div>
+					<h2 class="text-lg font-semibold">Standardized Financial Data</h2>
+					<p class="text-sm text-gray-600 mt-1">{results.length} rows total</p>
+				</div>
 				<button 
 					on:click={downloadExcel}
-					class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition flex items-center gap-2"
+					class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm flex items-center gap-2"
 				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
 					</svg>
-					Download Excel
+					Download CSV
 				</button>
 			</div>
 			
 			<!-- Scrollable Table Container -->
-			<div class="overflow-x-auto">
-				<table class="min-w-full table-auto">
+			<div class="overflow-x-auto border border-gray-200 rounded">
+				<table class="min-w-full divide-y divide-gray-200">
 					<thead class="bg-gray-50">
 						<tr>
 							{#if results[0]}
 								{#each Object.keys(results[0]) as header}
-									<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap">
 										{header}
 									</th>
 								{/each}
@@ -285,10 +289,10 @@
 					</thead>
 					<tbody class="bg-white divide-y divide-gray-200">
 						{#each results as row, i}
-							<tr class="{i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+							<tr class="hover:bg-gray-50">
 								{#each Object.values(row) as value}
-									<td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-										{value || '-'}
+									<td class="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+										{value !== null && value !== undefined ? value : '-'}
 									</td>
 								{/each}
 							</tr>
@@ -296,18 +300,13 @@
 					</tbody>
 				</table>
 			</div>
-			
-			<!-- Results Summary -->
-			<div class="mt-4 text-sm text-gray-600">
-				Showing {results.length} rows
-			</div>
 		</div>
 	{/if}
 </main>
 
 <style>
 	:global(body) {
-		background: linear-gradient(to bottom right, #f3f4f6, #e5e7eb);
-		min-height: 100vh;
+		background-color: #f9fafb;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	}
 </style>

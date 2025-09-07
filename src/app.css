@@ -2,53 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar for table */
+/* Clean, professional table styling */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Custom scrollbar for table - subtle and clean */
 .overflow-x-auto::-webkit-scrollbar {
-  height: 8px;
+  height: 6px;
 }
 
 .overflow-x-auto::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
+  background: #f3f4f6;
 }
 
 .overflow-x-auto::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+  background: #d1d5db;
+  border-radius: 3px;
 }
 
 .overflow-x-auto::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #9ca3af;
 }
 
-/* Table hover effects */
-tbody tr:hover {
-  background-color: #f9fafb !important;
-  transition: background-color 0.2s;
+/* Ensure consistent table cell sizing */
+table td, table th {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
-/* Responsive table */
-@media (max-width: 768px) {
-  table {
-    font-size: 0.875rem;
-  }
-  
-  th, td {
-    padding: 0.5rem !important;
-  }
-}
-
-/* Loading spinner */
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.spinner {
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #3b82f6;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
+/* Clean focus states */
+button:focus, input:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #3b82f6;
 }
