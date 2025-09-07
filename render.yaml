@@ -1,18 +1,11 @@
 services:
   - type: web
     name: financial-processor
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node build
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
-    buildFilter:
-      paths:
-        - src/**
-        - package*.json
-        - svelte.config.js
-        - vite.config.js
-        - postcss.config.js
-        - tailwind.config.js
