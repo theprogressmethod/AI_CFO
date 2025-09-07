@@ -1,0 +1,82 @@
+{
+  "name": "Financial Processor Simple",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// For testing - create sample data in the expected format\n// In production, this would come from the AI transformation\n\nconst sampleData = [\n  {\n    \"Date Concat\": \"Jan 2023\",\n    \"Year\": \"2023\",\n    \"Month\": \"1\",\n    \"Financial Statements\": \"Income Statement\",\n    \"Parent Account\": \"Revenue\",\n    \"Account\": \"Revenue Tier 1\",\n    \"Attribute\": \"1/1/2023\",\n    \"Value\": \"$73,498\"\n  },\n  {\n    \"Date Concat\": \"Feb 2023\",\n    \"Year\": \"2023\",\n    \"Month\": \"2\",\n    \"Financial Statements\": \"Income Statement\",\n    \"Parent Account\": \"Revenue\",\n    \"Account\": \"Revenue Tier 1\",\n    \"Attribute\": \"2/1/2023\",\n    \"Value\": \"$35,803\"\n  },\n  {\n    \"Date Concat\": \"Jan 2023\",\n    \"Year\": \"2023\",\n    \"Month\": \"1\",\n    \"Financial Statements\": \"Balance Sheet\",\n    \"Parent Account\": \"Cash & Cash Equivalents\",\n    \"Account\": \"Cash & Cash Equivalents\",\n    \"Attribute\": \"1/1/2023\",\n    \"Value\": \"$400,000\"\n  },\n  {\n    \"Date Concat\": \"Feb 2023\",\n    \"Year\": \"2023\",\n    \"Month\": \"2\",\n    \"Financial Statements\": \"Balance Sheet\",\n    \"Parent Account\": \"Cash & Cash Equivalents\",\n    \"Account\": \"Cash & Cash Equivalents\",\n    \"Attribute\": \"2/1/2023\",\n    \"Value\": \"$401,239\"\n  }\n];\n\nreturn sampleData;"
+      },
+      "id": "process",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "simple-test-v1",
+  "id": "financial-processor-simple",
+  "tags": []
+}

@@ -1,0 +1,212 @@
+{
+  "name": "Financial Statement Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyOutput": "data"
+        }
+      },
+      "id": "webhook-entry",
+      "name": "Webhook Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "process-financials-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "options": {}
+      },
+      "id": "extract-files",
+      "name": "Extract Files",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {
+          "keepSource": "json"
+        }
+      },
+      "id": "read-excel",
+      "name": "Read Excel Content",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo-preview",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a financial data transformation expert. Your task is to transform financial statement data (Income Statements and Balance Sheets) into a standardized long format.\n\nExpected output format:\n- Each data point becomes a separate row\n- Convert from wide format (months as columns) to long format (each month is a row)\n- Include hierarchy with Parent Account field\n\nRequired columns for EVERY row:\n1. Date Concat: Month Year format (e.g., \"Jan 2023\")\n2. Year: 4-digit year (e.g., \"2023\")\n3. Month: Numeric month (e.g., \"1\" for January)\n4. Financial Statements: Either \"Income Statement\" or \"Balance Sheet\"\n5. Parent Account: The category (e.g., \"Revenue\", \"Total Direct Materials\", \"Cash & Cash Equivalents\")\n6. Account: The specific line item name\n7. Attribute: Date in M/D/YYYY format (e.g., \"1/1/2023\")\n8. Value: The dollar amount as string with $ and commas (e.g., \"$400,000\")\n\nIMPORTANT:\n- Transform ALL rows and ALL months\n- Maintain account hierarchy\n- Handle negative values properly\n- Return ONLY a valid JSON array\n- No explanations, just the JSON array"
+            },
+            {
+              "role": "user", 
+              "content": "=Transform this financial data into the standardized format:\n\n{{ $json.data }}\n\nReturn only a JSON array with all data points transformed."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 16000
+        }
+      },
+      "id": "ai-transform",
+      "name": "AI Transform Data",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "{{YOUR_OPENAI_CREDENTIAL_ID}}",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Combine all results into a single array\nlet allResults = [];\n\n// Process each item\nfor (const item of $input.all()) {\n  try {\n    // Check if the data is already an array\n    if (Array.isArray(item.json)) {\n      allResults = allResults.concat(item.json);\n    } \n    // Check if there's a message property with the data\n    else if (item.json.message) {\n      let parsed;\n      if (typeof item.json.message === 'string') {\n        // Try to parse if it's a string\n        parsed = JSON.parse(item.json.message);\n      } else {\n        parsed = item.json.message;\n      }\n      \n      if (Array.isArray(parsed)) {\n        allResults = allResults.concat(parsed);\n      } else {\n        allResults.push(parsed);\n      }\n    }\n    // Check if there's a content property\n    else if (item.json.content) {\n      let parsed;\n      if (typeof item.json.content === 'string') {\n        parsed = JSON.parse(item.json.content);\n      } else {\n        parsed = item.json.content;\n      }\n      \n      if (Array.isArray(parsed)) {\n        allResults = allResults.concat(parsed);\n      } else {\n        allResults.push(parsed);\n      }\n    }\n    // Otherwise try to use the json directly\n    else if (item.json) {\n      allResults.push(item.json);\n    }\n  } catch (error) {\n    console.error('Error processing item:', error);\n    // If parsing fails, try to add raw data\n    if (item.json) {\n      allResults.push(item.json);\n    }\n  }\n}\n\n// Ensure all values are properly formatted\nconst cleanResults = allResults.map(row => {\n  // Ensure all required fields exist\n  return {\n    'Date Concat': row['Date Concat'] || row.date_concat || '',\n    'Year': row['Year'] || row.year || '',\n    'Month': row['Month'] || row.month || '',\n    'Financial Statements': row['Financial Statements'] || row.financial_statements || '',\n    'Parent Account': row['Parent Account'] || row.parent_account || '',\n    'Account': row['Account'] || row.account || '',\n    'Attribute': row['Attribute'] || row.attribute || '',\n    'Value': row['Value'] || row.value || ''\n  };\n});\n\nreturn cleanResults;"
+      },
+      "id": "consolidate-data",
+      "name": "Consolidate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Entry": {
+      "main": [
+        [
+          {
+            "node": "Extract Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Files": {
+      "main": [
+        [
+          {
+            "node": "Read Excel Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel Content": {
+      "main": [
+        [
+          {
+            "node": "AI Transform Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Transform Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Data": {
+      "main": [
+        [
+          {
+            "node": "Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "financial-processor-v2",
+  "meta": {
+    "instanceId": "n8n-financial-processor"
+  },
+  "id": "financial-processor-workflow",
+  "tags": []
+}
