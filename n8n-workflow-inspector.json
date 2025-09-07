@@ -1,0 +1,134 @@
+{
+  "name": "Excel Data Inspector",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fix binary field name\nconst items = $input.all();\n\nitems.forEach(item => {\n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0 && !item.binary.data) {\n      const firstKey = binaryKeys[0];\n      item.binary.data = item.binary[firstKey];\n      console.log(`Renamed binary field from '${firstKey}' to 'data'`);\n      console.log(`File: ${item.binary.data.fileName}`);\n    }\n  }\n});\n\nreturn items;"
+      },
+      "id": "fix-binary",
+      "name": "Fix Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "spreadsheetFile",
+        "binaryPropertyName": "data",
+        "options": {
+          "includeEmptyCells": true,
+          "headerRow": false,
+          "readAsString": true
+        }
+      },
+      "id": "read-excel",
+      "name": "Read Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Inspect and transform the Excel data\nconst items = $input.all();\nlet testData = [];\n\nitems.forEach((item, fileIndex) => {\n  const fileName = item.binary?.data?.fileName || `File ${fileIndex + 1}`;\n  console.log(`\\n=== Processing ${fileName} ===`);\n  \n  const data = item.json;\n  \n  // Log what we received\n  console.log('Data type:', Array.isArray(data) ? 'Array' : typeof data);\n  \n  if (Array.isArray(data)) {\n    console.log(`Rows found: ${data.length}`);\n    if (data.length > 0) {\n      console.log('First row:', JSON.stringify(data[0]));\n      console.log('Second row:', data[1] ? JSON.stringify(data[1]) : 'No second row');\n      \n      // Create sample transformed data to test the display\n      // We'll just show the raw data structure for now\n      data.slice(0, 5).forEach((row, idx) => {\n        testData.push({\n          \"Date Concat\": `Row ${idx + 1}`,\n          \"Year\": \"2023\",\n          \"Month\": String(fileIndex + 1),\n          \"Financial Statements\": fileName.includes('Balance') ? \"Balance Sheet\" : \"Income Statement\",\n          \"Parent Account\": \"Debug\",\n          \"Account\": `Row ${idx + 1} Data`,\n          \"Attribute\": \"1/1/2023\",\n          \"Value\": JSON.stringify(row).substring(0, 50)\n        });\n      });\n    }\n  } else if (data && typeof data === 'object') {\n    const keys = Object.keys(data);\n    console.log(`Object with ${keys.length} keys`);\n    console.log('Keys:', keys.slice(0, 10));\n    \n    // Show object structure\n    keys.slice(0, 5).forEach((key, idx) => {\n      testData.push({\n        \"Date Concat\": `Key ${idx + 1}`,\n        \"Year\": \"2023\",\n        \"Month\": String(fileIndex + 1),\n        \"Financial Statements\": fileName.includes('Balance') ? \"Balance Sheet\" : \"Income Statement\",\n        \"Parent Account\": \"Debug\",\n        \"Account\": key,\n        \"Attribute\": \"1/1/2023\",\n        \"Value\": JSON.stringify(data[key]).substring(0, 50)\n      });\n    });\n  }\n});\n\n// If no test data created, add a debug row\nif (testData.length === 0) {\n  testData.push({\n    \"Date Concat\": \"ERROR\",\n    \"Year\": \"2023\",\n    \"Month\": \"1\",\n    \"Financial Statements\": \"Debug\",\n    \"Parent Account\": \"System\",\n    \"Account\": \"No Data Found\",\n    \"Attribute\": \"1/1/2023\",\n    \"Value\": \"Check n8n console for details\"\n  });\n}\n\nconsole.log(`\\nReturning ${testData.length} test rows`);\nreturn [{json: {data: JSON.stringify(testData)}}];"
+      },
+      "id": "inspect",
+      "name": "Inspect Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [700, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fix Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Binary": {
+      "main": [
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Inspect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inspect Data": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "inspector-v1",
+  "id": "excel-inspector",
+  "tags": []
+}

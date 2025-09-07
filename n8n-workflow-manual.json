@@ -1,0 +1,134 @@
+{
+  "name": "Financial Processor - Manual Transform",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fix binary field\nconst items = $input.all();\nitems.forEach(item => {\n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0 && !item.binary.data) {\n      item.binary.data = item.binary[binaryKeys[0]];\n    }\n  }\n});\nreturn items;"
+      },
+      "id": "fix",
+      "name": "Fix Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "spreadsheetFile",
+        "binaryPropertyName": "data",
+        "options": {
+          "includeEmptyCells": false,
+          "headerRow": false,
+          "readAsString": false
+        }
+      },
+      "id": "read",
+      "name": "Read Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Manual transformation based on your Excel structure\nconst items = $input.all();\nlet allResults = [];\n\n// Helper functions\nfunction excelDateToJS(serial) {\n  if (!serial || serial < 1) return null;\n  const date = new Date((serial - 25569) * 86400 * 1000);\n  return date;\n}\n\nfunction formatDate(date) {\n  if (!date) return '';\n  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;\n}\n\nfunction formatMonthYear(date) {\n  if (!date) return '';\n  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\n  return `${months[date.getMonth()]} ${date.getFullYear()}`;\n}\n\n// Known date columns from your data: 44927 to 45627 (Jan 2023 to Dec 2024)\nconst dateSerials = [\n  44927, 44958, 44986, 45017, 45047, 45078, 45108, 45139, 45170, 45200, 45231, 45261,  // 2023\n  45292, 45323, 45352, 45383, 45413, 45444, 45474, 45505, 45536, 45566, 45597, 45627   // 2024\n];\n\nconst dateColumns = dateSerials.map(serial => {\n  const date = excelDateToJS(serial);\n  return {\n    serial: serial,\n    date: date,\n    monthYear: formatMonthYear(date),\n    month: (date.getMonth() + 1).toString(),\n    year: date.getFullYear().toString(),\n    formatted: formatDate(date)\n  };\n});\n\nitems.forEach((item, idx) => {\n  const fileName = item.binary?.data?.fileName || '';\n  const isBalance = fileName.toLowerCase().includes('balance');\n  const statementType = isBalance ? 'Balance Sheet' : 'Income Statement';\n  \n  console.log(`Processing ${fileName} as ${statementType}`);\n  \n  const data = item.json;\n  \n  // Handle both array and object formats\n  let rows = [];\n  if (Array.isArray(data)) {\n    rows = data;\n  } else if (typeof data === 'object') {\n    // Convert object to array\n    rows = Object.values(data);\n  }\n  \n  // Process each row\n  rows.forEach(row => {\n    if (!row || typeof row !== 'object') return;\n    \n    // Get account name from various possible fields\n    const accountName = row['Income Statement'] || row['Chart Of Accounts'] || row['Account'] || '';\n    \n    // Skip header rows and empty rows\n    if (!accountName || \n        accountName === 'Chart Of Accounts' || \n        accountName === 'Income Statement' ||\n        accountName === 'Balance Sheet' ||\n        accountName === 'Start Date' ||\n        accountName === 'End Date' ||\n        accountName === 'Balance Check' ||\n        accountName.includes('Number of Accounts') ||\n        accountName === 'Period 1' ||\n        accountName === 'Period 2') {\n      return;\n    }\n    \n    // Determine parent account\n    let parentAccount = '';\n    if (accountName.includes('Revenue')) parentAccount = 'Revenue';\n    else if (accountName.includes('COGS') || accountName.includes('Cost')) parentAccount = 'COGS';\n    else if (accountName.includes('Direct Materials')) parentAccount = 'COGS';\n    else if (accountName.includes('Direct Labor')) parentAccount = 'COGS';\n    else if (accountName.includes('Gross Profit')) parentAccount = 'Gross Profit';\n    else if (accountName.includes('Expense')) parentAccount = 'Operating Expenses';\n    else if (accountName.includes('Net Income')) parentAccount = 'Net Income';\n    else if (accountName.includes('Cash')) parentAccount = 'Cash & Cash Equivalents';\n    else if (accountName.includes('Receivable')) parentAccount = 'Accounts Receivable';\n    else if (accountName.includes('Inventory')) parentAccount = 'Inventory';\n    else if (accountName.includes('Asset')) parentAccount = 'Assets';\n    else if (accountName.includes('Payable')) parentAccount = 'Current Liabilities';\n    else if (accountName.includes('Debt')) parentAccount = 'Liabilities';\n    else if (accountName.includes('Stock') || accountName.includes('Equity')) parentAccount = 'Equity';\n    else parentAccount = statementType === 'Balance Sheet' ? 'Assets' : 'Revenue';\n    \n    // Look for values in columns that match our date serials\n    let colIndex = 7; // Start from __EMPTY_7\n    dateColumns.forEach((dateCol, idx) => {\n      // Try different column naming patterns\n      const columnNames = [\n        `__EMPTY_${colIndex + idx}`,\n        `${dateCol.serial}`,\n        dateCol.monthYear,\n        `Period ${idx + 1}`\n      ];\n      \n      let value = null;\n      for (const colName of columnNames) {\n        if (row[colName] !== undefined && row[colName] !== null) {\n          value = row[colName];\n          break;\n        }\n      }\n      \n      if (value !== null && value !== '' && value !== 0) {\n        let formattedValue = '';\n        const numVal = parseFloat(value);\n        if (!isNaN(numVal)) {\n          const isNeg = numVal < 0;\n          const abs = Math.abs(numVal);\n          formattedValue = isNeg ? `-$${abs.toLocaleString()}` : `$${abs.toLocaleString()}`;\n        } else {\n          formattedValue = String(value);\n        }\n        \n        allResults.push({\n          \"Date Concat\": dateCol.monthYear,\n          \"Year\": dateCol.year,\n          \"Month\": dateCol.month,\n          \"Financial Statements\": statementType,\n          \"Parent Account\": parentAccount,\n          \"Account\": accountName,\n          \"Attribute\": dateCol.formatted,\n          \"Value\": formattedValue\n        });\n      }\n    });\n  });\n});\n\nconsole.log(`Total transformed rows: ${allResults.length}`);\n\n// If no results, return debug info\nif (allResults.length === 0) {\n  allResults.push({\n    \"Date Concat\": \"ERROR\",\n    \"Year\": \"2025\",\n    \"Month\": \"1\",\n    \"Financial Statements\": \"Debug\",\n    \"Parent Account\": \"System\",\n    \"Account\": \"No data transformed\",\n    \"Attribute\": \"1/1/2025\",\n    \"Value\": \"Check n8n execution log\"\n  });\n}\n\nreturn [{json: {data: JSON.stringify(allResults)}}];"
+      },
+      "id": "transform",
+      "name": "Transform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [700, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fix Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Binary": {
+      "main": [
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "manual-v1",
+  "id": "financial-processor-manual",
+  "tags": []
+}

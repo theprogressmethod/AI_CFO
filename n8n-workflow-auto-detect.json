@@ -1,0 +1,203 @@
+{
+  "name": "Financial Processor - Auto Detect",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle file upload and convert to JSON\nconst items = $input.all();\nlet allData = [];\n\nitems.forEach((item, index) => {\n  // Find the binary field name dynamically\n  let binaryFieldName = null;\n  let binaryData = null;\n  \n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0) {\n      binaryFieldName = binaryKeys[0]; // Get first binary field\n      binaryData = item.binary[binaryFieldName];\n      console.log(`Found binary field: ${binaryFieldName}`);\n      console.log(`File name: ${binaryData.fileName}`);\n    }\n  }\n  \n  // If we have binary data, rename it to 'data' for the spreadsheet node\n  if (binaryFieldName && binaryFieldName !== 'data') {\n    item.binary.data = item.binary[binaryFieldName];\n    delete item.binary[binaryFieldName];\n  }\n});\n\n// Pass through the items with renamed binary field\nreturn items;"
+      },
+      "id": "fix-binary",
+      "name": "Fix Binary Field",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "spreadsheetFile",
+        "binaryPropertyName": "data",
+        "options": {
+          "includeEmptyCells": false,
+          "headerRow": true,
+          "readAsString": true
+        }
+      },
+      "id": "read-excel",
+      "name": "Read Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert spreadsheet data to text format for AI\nconst items = $input.all();\nlet textOutput = '';\n\nitems.forEach((item, fileIndex) => {\n  if (fileIndex > 0) textOutput += '\\n\\n--- NEXT FILE ---\\n\\n';\n  \n  const fileName = item.binary?.data?.fileName || `File ${fileIndex + 1}`;\n  textOutput += `Processing: ${fileName}\\n\\n`;\n  \n  const data = item.json;\n  \n  if (Array.isArray(data)) {\n    // Array of rows\n    if (data.length > 0) {\n      const headers = Object.keys(data[0]);\n      textOutput += headers.join('\\t') + '\\n';\n      \n      data.forEach(row => {\n        const values = headers.map(h => String(row[h] || '').trim());\n        textOutput += values.join('\\t') + '\\n';\n      });\n    }\n  } else if (data && typeof data === 'object') {\n    // Object format - convert to table\n    textOutput += JSON.stringify(data, null, 2);\n  }\n});\n\nconsole.log('Data preview:', textOutput.substring(0, 500));\nreturn [{json: {spreadsheetData: textOutput}}];"
+      },
+      "id": "prepare",
+      "name": "Prepare for AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Transform financial data to standardized format. Each cell value becomes one row.\n\nOutput EXACTLY these columns:\n- \"Date Concat\": Like \"Jan 2023\"\n- \"Year\": Like \"2023\"\n- \"Month\": Like \"1\" for January\n- \"Financial Statements\": \"Income Statement\" or \"Balance Sheet\"\n- \"Parent Account\": Category like \"Revenue\", \"COGS\", \"Assets\"\n- \"Account\": Line item name\n- \"Attribute\": Date as \"1/1/2023\"\n- \"Value\": Amount like \"$123,456\"\n\nReturn ONLY JSON array, no text."
+            },
+            {
+              "role": "user",
+              "content": "{{ $json.spreadsheetData }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 16000
+        }
+      },
+      "id": "ai",
+      "name": "AI Transform",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [700, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIALS_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract clean JSON from AI response\nconst input = $input.first().json;\nlet data = [];\n\nif (Array.isArray(input)) {\n  data = input;\n} else if (typeof input === 'string') {\n  try {\n    data = JSON.parse(input);\n  } catch(e) {\n    console.error('Parse error:', e);\n  }\n} else if (input.message || input.content) {\n  const content = input.message || input.content;\n  try {\n    data = typeof content === 'string' ? JSON.parse(content) : content;\n  } catch(e) {\n    console.error('Content parse error:', e);\n  }\n}\n\nif (!Array.isArray(data)) data = [];\n\nconst cleaned = data.map(row => ({\n  \"Date Concat\": String(row[\"Date Concat\"] || ''),\n  \"Year\": String(row[\"Year\"] || ''),\n  \"Month\": String(row[\"Month\"] || ''),\n  \"Financial Statements\": String(row[\"Financial Statements\"] || ''),\n  \"Parent Account\": String(row[\"Parent Account\"] || ''),\n  \"Account\": String(row[\"Account\"] || ''),\n  \"Attribute\": String(row[\"Attribute\"] || ''),\n  \"Value\": String(row[\"Value\"] || '')\n}));\n\nreturn [{json: {data: JSON.stringify(cleaned)}}];"
+      },
+      "id": "clean",
+      "name": "Clean Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fix Binary Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Binary Field": {
+      "main": [
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Prepare for AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for AI": {
+      "main": [
+        [
+          {
+            "node": "AI Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Transform": {
+      "main": [
+        [
+          {
+            "node": "Clean Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Data": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "auto-detect-v1",
+  "id": "financial-processor-auto",
+  "tags": []
+}

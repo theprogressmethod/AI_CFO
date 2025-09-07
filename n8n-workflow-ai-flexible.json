@@ -1,0 +1,204 @@
+{
+  "name": "Financial Processor - AI Flexible",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fix binary field\nconst items = $input.all();\nitems.forEach(item => {\n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0 && !item.binary.data) {\n      item.binary.data = item.binary[binaryKeys[0]];\n    }\n  }\n});\nreturn items;"
+      },
+      "id": "fix-binary",
+      "name": "Fix Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "spreadsheetFile",
+        "binaryPropertyName": "data",
+        "options": {
+          "includeEmptyCells": true,
+          "headerRow": false,
+          "readAsString": true,
+          "rawData": true
+        }
+      },
+      "id": "read-excel",
+      "name": "Read Excel",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert spreadsheet to readable text for AI\nconst items = $input.all();\nlet combinedText = '';\n\nitems.forEach((item, idx) => {\n  const fileName = item.binary?.data?.fileName || `File ${idx + 1}`;\n  combinedText += `\\n=== FILE: ${fileName} ===\\n\\n`;\n  \n  const data = item.json;\n  \n  // Convert to table format regardless of structure\n  if (Array.isArray(data)) {\n    // Array of rows\n    data.forEach((row, rowIdx) => {\n      if (typeof row === 'object') {\n        const values = Object.values(row).map(v => v || '').join('\\t');\n        combinedText += values + '\\n';\n      }\n    });\n  } else if (typeof data === 'object') {\n    // Object format - convert to rows\n    Object.entries(data).forEach(([key, row]) => {\n      if (typeof row === 'object') {\n        const values = Object.values(row).map(v => v || '').join('\\t');\n        combinedText += values + '\\n';\n      }\n    });\n  }\n});\n\nconsole.log('Data sample:', combinedText.substring(0, 500));\nreturn [{json: {spreadsheetData: combinedText}}];"
+      },
+      "id": "prepare-for-ai",
+      "name": "Prepare for AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4-turbo-preview",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a financial data expert. Transform various financial statement formats into a standardized structure.\n\nYour task:\n1. Identify the type of statement (Income Statement, Balance Sheet, Cash Flow, etc.)\n2. Recognize the data structure (could be dates in columns, dates in rows, various layouts)\n3. Extract ALL data points and transform them\n\nOutput format - EVERY data point becomes a row with these exact columns:\n- \"Date Concat\": Month and year like \"Jan 2023\" \n- \"Year\": Year as string like \"2023\"\n- \"Month\": Month number as string like \"1\" for January\n- \"Financial Statements\": The statement type (\"Income Statement\", \"Balance Sheet\", etc.)\n- \"Parent Account\": The category/grouping (\"Revenue\", \"COGS\", \"Assets\", \"Liabilities\", etc.)\n- \"Account\": The specific line item name\n- \"Attribute\": Date in M/D/YYYY format like \"1/1/2023\"\n- \"Value\": Dollar amount with $ and commas like \"$123,456\" or \"-$123,456\"\n\nCommon patterns to recognize:\n- Excel serial dates (numbers like 44927 = Jan 1, 2023)\n- Account names usually in first column or first row\n- Dates might be in headers as months, quarters, or years\n- Values might be in thousands (add zeros if indicated)\n- Parent accounts might be explicitly shown or need to be inferred\n\nBe flexible - handle various formats but always output the same structure.\nReturn ONLY a valid JSON array, no explanations."
+            },
+            {
+              "role": "user",
+              "content": "Transform this financial data into the standardized format:\n\n{{ $json.spreadsheetData }}\n\nAnalyze the structure, identify all accounts and time periods, and return a JSON array with every data point transformed."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 16000
+        }
+      },
+      "id": "ai-transform",
+      "name": "AI Transform",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [750, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIALS_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate AI response\nconst input = $input.first().json;\nlet finalData = [];\n\n// Try various response formats\nif (Array.isArray(input)) {\n  finalData = input;\n} else if (typeof input === 'string') {\n  try {\n    finalData = JSON.parse(input);\n  } catch (e) {\n    console.error('Parse error:', e);\n  }\n} else if (input && typeof input === 'object') {\n  // Check for nested response\n  const possibleKeys = ['message', 'content', 'result', 'data', 'output'];\n  for (const key of possibleKeys) {\n    if (input[key]) {\n      try {\n        finalData = typeof input[key] === 'string' ? JSON.parse(input[key]) : input[key];\n        if (Array.isArray(finalData)) break;\n      } catch (e) {\n        continue;\n      }\n    }\n  }\n}\n\n// Ensure it's an array\nif (!Array.isArray(finalData)) {\n  console.error('Not an array:', finalData);\n  finalData = [];\n}\n\n// Clean and validate\nconst cleaned = finalData\n  .filter(row => row && typeof row === 'object')\n  .map(row => ({\n    \"Date Concat\": String(row[\"Date Concat\"] || ''),\n    \"Year\": String(row[\"Year\"] || ''),\n    \"Month\": String(row[\"Month\"] || ''),\n    \"Financial Statements\": String(row[\"Financial Statements\"] || ''),\n    \"Parent Account\": String(row[\"Parent Account\"] || ''),\n    \"Account\": String(row[\"Account\"] || ''),\n    \"Attribute\": String(row[\"Attribute\"] || ''),\n    \"Value\": String(row[\"Value\"] || '')\n  }));\n\nconsole.log(`Returning ${cleaned.length} rows`);\nreturn [{json: {data: JSON.stringify(cleaned)}}];"
+      },
+      "id": "clean-response",
+      "name": "Clean Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1150, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fix Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Binary": {
+      "main": [
+        [
+          {
+            "node": "Read Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Prepare for AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for AI": {
+      "main": [
+        [
+          {
+            "node": "AI Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Transform": {
+      "main": [
+        [
+          {
+            "node": "Clean Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ai-flexible-v1",
+  "id": "financial-processor-ai-flexible",
+  "tags": []
+}
