@@ -7,10 +7,10 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (including dev dependencies for build)
+RUN npm install
 
-# Copy source code
+# Copy all source files
 COPY . .
 
 # Build the application
@@ -21,12 +21,17 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy built app and dependencies
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/package*.json ./
+# Copy package files
+COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --production
+RUN npm install --production
+
+# Copy built application from builder stage
+COPY --from=builder /app/build ./build
+
+# Copy static files if any
+COPY --from=builder /app/static ./static 2>/dev/null || true
 
 # Expose port
 EXPOSE 3000
@@ -35,6 +40,7 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+ENV ORIGIN=https://financial-processor.onrender.com
 
 # Start the application
 CMD ["node", "build"]
