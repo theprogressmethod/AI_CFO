@@ -48,8 +48,6 @@
 		statusMessage = 'Processing files...';
 
 		try {
-			// Send all files to n8n for processing
-			// n8n should return a single consolidated JSON array
 			const formData = new FormData();
 			
 			// Append all files to the form data
@@ -68,22 +66,68 @@
 				throw new Error(`HTTP error! status: ${response.status}`);
 			}
 
-			const data = await response.json();
+			const text = await response.text();
+			console.log('Raw response:', text); // Debug log
 			
-			// Expect a single array with all rows from all files
-			// Each row should have the same columns: Date Concat, Year, Month, Financial Statements, Account, Attribute, Value
+			let data;
+			try {
+				data = JSON.parse(text);
+			} catch (parseError) {
+				console.error('JSON parse error:', parseError);
+				throw new Error('Invalid response format from server');
+			}
+			
+			// Handle various response formats from n8n
+			let processedResults = [];
+			
+			// If it's already an array, use it
 			if (Array.isArray(data)) {
-				results = data;
-			} else if (data.data && Array.isArray(data.data)) {
-				results = data.data;
-			} else if (data.results && Array.isArray(data.results)) {
-				results = data.results;
-			} else {
-				// If single object, wrap in array
-				results = [data];
+				processedResults = data;
+			}
+			// If it's an object with a data property
+			else if (data && typeof data === 'object') {
+				// Check common property names n8n might use
+				if (Array.isArray(data.data)) {
+					processedResults = data.data;
+				} else if (Array.isArray(data.items)) {
+					processedResults = data.items;
+				} else if (Array.isArray(data.results)) {
+					processedResults = data.results;
+				} else if (Array.isArray(data.json)) {
+					processedResults = data.json;
+				} else if (data.json && Array.isArray(data.json.data)) {
+					processedResults = data.json.data;
+				} else {
+					// If it's a single object with the expected properties, wrap it
+					if (data['Date Concat'] || data['Year'] || data['Account']) {
+						processedResults = [data];
+					} else {
+						// Try to extract any array from the object
+						const arrays = Object.values(data).filter(v => Array.isArray(v));
+						if (arrays.length > 0) {
+							processedResults = arrays.flat();
+						} else {
+							console.warn('Unexpected data structure:', data);
+							processedResults = [data];
+						}
+					}
+				}
 			}
 
-			statusMessage = `Successfully processed ${files.length} file(s) - ${results.length} total rows`;
+			// Validate and clean the results
+			if (processedResults.length > 0) {
+				// Check if the first item has the expected structure
+				const firstItem = processedResults[0];
+				if (typeof firstItem === 'object' && firstItem !== null) {
+					results = processedResults;
+					statusMessage = `Successfully processed ${files.length} file(s) - ${results.length} rows loaded`;
+				} else {
+					throw new Error('Invalid data structure in response');
+				}
+			} else {
+				throw new Error('No data returned from server');
+			}
+
 		} catch (err) {
 			console.error('Processing error:', err);
 			error = err.message;
@@ -105,6 +149,8 @@
 			});
 			
 			if (response.ok) {
+				const text = await response.text();
+				console.log('Test response:', text);
 				alert('✅ Successfully connected to n8n!');
 			} else {
 				alert(`⚠️ n8n responded with status: ${response.status}`);
@@ -114,37 +160,39 @@
 		}
 	}
 
-	// Download results as Excel
-	async function downloadExcel() {
+	// Download results as CSV
+	async function downloadCSV() {
 		if (!results || results.length === 0) return;
 
 		try {
-			// Convert JSON to CSV for Excel
+			// Get headers from the first row
 			const headers = Object.keys(results[0]);
-			const csvContent = [
-				headers.join(','),
-				...results.map(row => 
-					headers.map(header => {
-						const value = row[header];
-						// Handle values with commas or quotes
-						if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-							return `"${value.replace(/"/g, '""')}"`;
-						}
-						return value;
-					}).join(',')
-				)
-			].join('\n');
+			
+			// Build CSV content
+			let csvContent = headers.join(',') + '\n';
+			
+			results.forEach(row => {
+				const values = headers.map(header => {
+					const value = row[header] || '';
+					// Escape quotes and wrap in quotes if contains comma, quote, or newline
+					if (value.toString().includes(',') || value.toString().includes('"') || value.toString().includes('\n')) {
+						return `"${value.toString().replace(/"/g, '""')}"`;
+					}
+					return value;
+				});
+				csvContent += values.join(',') + '\n';
+			});
 
-			// Create blob and download
+			// Create and download
 			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
-			link.setAttribute('href', url);
-			link.setAttribute('download', 'standardized_financials.csv');
-			link.style.visibility = 'hidden';
+			link.href = url;
+			link.download = 'standardized_financials.csv';
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
 		} catch (err) {
 			console.error('Download error:', err);
 			alert('Error downloading file');
@@ -262,25 +310,27 @@
 					<h2 class="text-lg font-semibold">Standardized Financial Data</h2>
 					<p class="text-sm text-gray-600 mt-1">{results.length} rows total</p>
 				</div>
-				<button 
-					on:click={downloadExcel}
-					class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm flex items-center gap-2"
-				>
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-					</svg>
-					Download CSV
-				</button>
+				{#if results.length > 0}
+					<button 
+						on:click={downloadCSV}
+						class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm flex items-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+						</svg>
+						Download CSV
+					</button>
+				{/if}
 			</div>
 			
 			<!-- Scrollable Table Container -->
-			<div class="overflow-x-auto border border-gray-200 rounded">
+			<div class="overflow-x-auto border border-gray-200 rounded" style="max-height: 600px; overflow-y: auto;">
 				<table class="min-w-full divide-y divide-gray-200">
-					<thead class="bg-gray-50">
+					<thead class="bg-gray-50 sticky top-0">
 						<tr>
 							{#if results[0]}
 								{#each Object.keys(results[0]) as header}
-									<th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap">
+									<th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap bg-gray-50">
 										{header}
 									</th>
 								{/each}
@@ -308,5 +358,12 @@
 	:global(body) {
 		background-color: #f9fafb;
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	}
+	
+	/* Sticky header for scrollable table */
+	thead th {
+		position: sticky;
+		top: 0;
+		z-index: 10;
 	}
 </style>

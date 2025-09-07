@@ -1,0 +1,86 @@
+{
+  "name": "Financial Processor Working",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Complete sample data matching your format\nconst sampleData = [\n  // Income Statement - Revenue\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"1/1/2023\",\"Value\":\"$73,498\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"2/1/2023\",\"Value\":\"$35,803\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"3/1/2023\",\"Value\":\"$69,571\"},\n  \n  // Income Statement - Total Revenue\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Total Revenue\",\"Account\":\"Total Revenue\",\"Attribute\":\"1/1/2023\",\"Value\":\"$270,378\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Total Revenue\",\"Account\":\"Total Revenue\",\"Attribute\":\"2/1/2023\",\"Value\":\"$218,982\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Total Revenue\",\"Account\":\"Total Revenue\",\"Attribute\":\"3/1/2023\",\"Value\":\"$259,332\"},\n  \n  // Income Statement - Direct Materials\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"COGS\",\"Account\":\"Direct Materials Tier 1\",\"Attribute\":\"1/1/2023\",\"Value\":\"$63,609\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"COGS\",\"Account\":\"Direct Materials Tier 1\",\"Attribute\":\"2/1/2023\",\"Value\":\"$84,910\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"COGS\",\"Account\":\"Direct Materials Tier 1\",\"Attribute\":\"3/1/2023\",\"Value\":\"$56,871\"},\n  \n  // Income Statement - Gross Profit\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Gross Profit\",\"Account\":\"Gross Profit\",\"Attribute\":\"1/1/2023\",\"Value\":\"$114,701\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Gross Profit\",\"Account\":\"Gross Profit\",\"Attribute\":\"2/1/2023\",\"Value\":\"$83,752\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Gross Profit\",\"Account\":\"Gross Profit\",\"Attribute\":\"3/1/2023\",\"Value\":\"$138,891\"},\n  \n  // Balance Sheet - Cash\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Cash & Cash Equivalents\",\"Account\":\"Cash & Cash Equivalents\",\"Attribute\":\"1/1/2023\",\"Value\":\"$400,000\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Cash & Cash Equivalents\",\"Account\":\"Cash & Cash Equivalents\",\"Attribute\":\"2/1/2023\",\"Value\":\"$401,239\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Cash & Cash Equivalents\",\"Account\":\"Cash & Cash Equivalents\",\"Attribute\":\"3/1/2023\",\"Value\":\"$407,475\"},\n  \n  // Balance Sheet - Accounts Receivable\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Accounts Receivable\",\"Account\":\"Accounts Receivable\",\"Attribute\":\"1/1/2023\",\"Value\":\"$220,000\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Accounts Receivable\",\"Account\":\"Accounts Receivable\",\"Attribute\":\"2/1/2023\",\"Value\":\"$226,041\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Accounts Receivable\",\"Account\":\"Accounts Receivable\",\"Attribute\":\"3/1/2023\",\"Value\":\"$222,545\"},\n  \n  // Balance Sheet - Inventory\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Inventory\",\"Account\":\"Inventory\",\"Attribute\":\"1/1/2023\",\"Value\":\"$150,000\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Inventory\",\"Account\":\"Inventory\",\"Attribute\":\"2/1/2023\",\"Value\":\"$147,683\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Inventory\",\"Account\":\"Inventory\",\"Attribute\":\"3/1/2023\",\"Value\":\"$136,530\"},\n  \n  // Balance Sheet - Fixed Assets\n  {\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Fixed Assets\",\"Account\":\"Fixed Assets\",\"Attribute\":\"1/1/2023\",\"Value\":\"$1,350,000\"},\n  {\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Fixed Assets\",\"Account\":\"Fixed Assets\",\"Attribute\":\"2/1/2023\",\"Value\":\"$1,337,963\"},\n  {\"Date Concat\":\"Mar 2023\",\"Year\":\"2023\",\"Month\":\"3\",\"Financial Statements\":\"Balance Sheet\",\"Parent Account\":\"Fixed Assets\",\"Account\":\"Fixed Assets\",\"Attribute\":\"3/1/2023\",\"Value\":\"$1,340,817\"}\n];\n\n// Return as a JSON string for the Set node\nreturn [{json: {data: JSON.stringify(sampleData)}}];"
+      },
+      "id": "process",
+      "name": "Generate Sample Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Sample Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Sample Data": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "working-v1",
+  "id": "financial-processor-working",
+  "tags": []
+}

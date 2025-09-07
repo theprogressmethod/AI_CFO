@@ -1,0 +1,94 @@
+{
+  "name": "Financial Processor Debug",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-financials",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "data",
+              "value": "=[{\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"1/1/2023\",\"Value\":\"$73,498\"},{\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"2/1/2023\",\"Value\":\"$35,803\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set",
+      "name": "Set Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Data": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "debug-v1",
+  "id": "financial-processor-debug",
+  "tags": []
+}
