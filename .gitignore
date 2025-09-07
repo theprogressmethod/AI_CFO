@@ -44,3 +44,5 @@ n8n-workflow-*.json
 # Docker volumes
 .n8n/
 n8n_data/
+.vercel
+archive/
