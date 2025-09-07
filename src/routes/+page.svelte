@@ -48,86 +48,61 @@
 		statusMessage = 'Processing files...';
 
 		try {
-			const formData = new FormData();
+			// Process files one by one and combine results
+			let allResults = [];
 			
-			// Append all files to the form data
-			files.forEach((file, index) => {
-				formData.append(`file_${index}`, file);
-			});
-			
-			statusMessage = `Processing ${files.length} file(s)...`;
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				statusMessage = `Processing ${file.name} (${i + 1}/${files.length})...`;
+				
+				const formData = new FormData();
+				formData.append('file', file);
+				
+				const response = await fetch('http://localhost:5678/webhook/process-financials', {
+					method: 'POST',
+					body: formData
+				});
 
-			const response = await fetch('http://localhost:5678/webhook/process-financials', {
-				method: 'POST',
-				body: formData
-			});
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
 
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const text = await response.text();
-			console.log('Raw response:', text); // Debug log
-			
-			let data;
-			try {
-				data = JSON.parse(text);
-			} catch (parseError) {
-				console.error('JSON parse error:', parseError);
-				throw new Error('Invalid response format from server');
-			}
-			
-			// Handle various response formats from n8n
-			let processedResults = [];
-			
-			// If it's already an array, use it
-			if (Array.isArray(data)) {
-				processedResults = data;
-			}
-			// If it's an object with a data property
-			else if (data && typeof data === 'object') {
-				// Check common property names n8n might use
-				if (Array.isArray(data.data)) {
-					processedResults = data.data;
-				} else if (Array.isArray(data.items)) {
-					processedResults = data.items;
-				} else if (Array.isArray(data.results)) {
-					processedResults = data.results;
-				} else if (Array.isArray(data.json)) {
-					processedResults = data.json;
-				} else if (data.json && Array.isArray(data.json.data)) {
-					processedResults = data.json.data;
+				const text = await response.text();
+				console.log(`Response for ${file.name}:`, text.substring(0, 200) + '...'); // Debug log
+				
+				let data;
+				try {
+					data = JSON.parse(text);
+				} catch (parseError) {
+					console.error('JSON parse error:', parseError);
+					throw new Error(`Invalid response format for ${file.name}`);
+				}
+				
+				// Add results to combined array
+				if (Array.isArray(data)) {
+					allResults = allResults.concat(data);
 				} else {
-					// If it's a single object with the expected properties, wrap it
-					if (data['Date Concat'] || data['Year'] || data['Account']) {
-						processedResults = [data];
-					} else {
-						// Try to extract any array from the object
-						const arrays = Object.values(data).filter(v => Array.isArray(v));
-						if (arrays.length > 0) {
-							processedResults = arrays.flat();
-						} else {
-							console.warn('Unexpected data structure:', data);
-							processedResults = [data];
-						}
-					}
+					console.warn('Unexpected data format:', data);
 				}
 			}
-
-			// Validate and clean the results
-			if (processedResults.length > 0) {
-				// Check if the first item has the expected structure
-				const firstItem = processedResults[0];
-				if (typeof firstItem === 'object' && firstItem !== null) {
-					results = processedResults;
-					statusMessage = `Successfully processed ${files.length} file(s) - ${results.length} rows loaded`;
-				} else {
-					throw new Error('Invalid data structure in response');
+			
+			// Sort results by Year, Month, Statement Type, and Account
+			allResults.sort((a, b) => {
+				// First by Year
+				if (a.Year !== b.Year) return a.Year.localeCompare(b.Year);
+				// Then by Month (numeric)
+				if (a.Month !== b.Month) return parseInt(a.Month) - parseInt(b.Month);
+				// Then by Statement Type
+				if (a['Financial Statements'] !== b['Financial Statements']) {
+					return a['Financial Statements'].localeCompare(b['Financial Statements']);
 				}
-			} else {
-				throw new Error('No data returned from server');
-			}
-
+				// Finally by Account
+				return (a.Account || '').localeCompare(b.Account || '');
+			});
+			
+			results = allResults;
+			statusMessage = `Successfully processed ${files.length} file(s) - ${results.length} total rows`;
+			
 		} catch (err) {
 			console.error('Processing error:', err);
 			error = err.message;
@@ -168,17 +143,19 @@
 			// Get headers from the first row
 			const headers = Object.keys(results[0]);
 			
-			// Build CSV content
-			let csvContent = headers.join(',') + '\n';
+			// Build CSV content with BOM for Excel compatibility
+			const BOM = '\uFEFF';
+			let csvContent = BOM + headers.join(',') + '\n';
 			
 			results.forEach(row => {
 				const values = headers.map(header => {
 					const value = row[header] || '';
 					// Escape quotes and wrap in quotes if contains comma, quote, or newline
-					if (value.toString().includes(',') || value.toString().includes('"') || value.toString().includes('\n')) {
-						return `"${value.toString().replace(/"/g, '""')}"`;
+					const stringValue = String(value);
+					if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+						return `"${stringValue.replace(/"/g, '""')}"`;
 					}
-					return value;
+					return stringValue;
 				});
 				csvContent += values.join(',') + '\n';
 			});
@@ -188,7 +165,7 @@
 			const link = document.createElement('a');
 			const url = URL.createObjectURL(blob);
 			link.href = url;
-			link.download = 'standardized_financials.csv';
+			link.download = `standardized_financials_${new Date().toISOString().split('T')[0]}.csv`;
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -236,7 +213,7 @@
 			<label class="cursor-pointer">
 				<input 
 					type="file" 
-					accept=".xlsx,.xls" 
+					accept=".xlsx,.xls,.csv" 
 					multiple 
 					on:change={handleFileSelect}
 					class="hidden"
@@ -245,7 +222,7 @@
 					Browse Files
 				</span>
 			</label>
-			<p class="text-xs text-gray-500 mt-2">Maximum 5 files • Excel format (.xlsx, .xls)</p>
+			<p class="text-xs text-gray-500 mt-2">Maximum 5 files • Excel format (.xlsx, .xls, .csv)</p>
 		</div>
 
 		<!-- Selected Files List -->
@@ -255,7 +232,7 @@
 				<div class="space-y-1">
 					{#each files as file, index}
 						<div class="flex items-center justify-between bg-gray-50 px-3 py-2 rounded text-sm">
-							<span>{file.name}</span>
+							<span>{file.name} <span class="text-gray-500">({(file.size / 1024).toFixed(1)} KB)</span></span>
 							<button 
 								on:click={() => removeFile(index)}
 								class="text-red-600 hover:text-red-800 text-xs"
@@ -326,7 +303,7 @@
 			<!-- Scrollable Table Container -->
 			<div class="overflow-x-auto border border-gray-200 rounded" style="max-height: 600px; overflow-y: auto;">
 				<table class="min-w-full divide-y divide-gray-200">
-					<thead class="bg-gray-50 sticky top-0">
+					<thead class="bg-gray-50 sticky top-0 z-10">
 						<tr>
 							{#if results[0]}
 								{#each Object.keys(results[0]) as header}
@@ -349,6 +326,28 @@
 						{/each}
 					</tbody>
 				</table>
+			</div>
+			
+			<!-- Quick Stats -->
+			<div class="mt-4 pt-4 border-t border-gray-200 grid grid-cols-3 gap-4 text-sm">
+				<div>
+					<span class="text-gray-500">Statements:</span>
+					<span class="ml-2 font-medium">
+						{[...new Set(results.map(r => r['Financial Statements']))].filter(Boolean).join(', ')}
+					</span>
+				</div>
+				<div>
+					<span class="text-gray-500">Period:</span>
+					<span class="ml-2 font-medium">
+						{results[0]?.['Date Concat']} - {results[results.length - 1]?.['Date Concat']}
+					</span>
+				</div>
+				<div>
+					<span class="text-gray-500">Accounts:</span>
+					<span class="ml-2 font-medium">
+						{[...new Set(results.map(r => r.Account))].filter(Boolean).length} unique
+					</span>
+				</div>
 			</div>
 		</div>
 	{/if}
