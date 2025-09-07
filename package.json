@@ -1,26 +1,33 @@
 {
-  "name": "ai-cfo",
-  "version": "0.0.1",
+  "name": "financial-processor",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
-    "setup": "sh setup.sh",
-    "deploy": "sh deploy-render.sh"
+    "start": "node build",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.1",
+    "@sveltejs/adapter-node": "^4.0.1",
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^3.0.0",
-    "eslint": "^8.56.0",
-    "eslint-plugin-svelte": "^2.35.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
     "svelte": "^4.2.7",
+    "svelte-check": "^3.6.0",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5.0.0",
     "vite": "^5.0.3"
   },
+  "type": "module",
   "dependencies": {
+    "papaparse": "^5.4.1",
     "xlsx": "^0.18.5"
   },
-  "type": "module"
+  "engines": {
+    "node": ">=18.13.0"
+  }
 }

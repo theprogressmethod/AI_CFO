@@ -1,20 +1,18 @@
 services:
   - type: web
-    name: ai-cfo
-    runtime: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./build
-    headers:
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    name: financial-processor
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: VITE_N8N_WEBHOOK_URL
-        value: https://app.n8n.cloud/webhook/d361f9c8-f2fc-4b16-a2d0-063fc8b1995b/process-financials
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    buildFilter:
+      paths:
+        - src/**
+        - package*.json
+        - svelte.config.js
+        - vite.config.js
+        - postcss.config.js
+        - tailwind.config.js

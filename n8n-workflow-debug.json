@@ -1,5 +1,5 @@
 {
-  "name": "Financial Processor Debug",
+  "name": "Financial Processor - Debug",
   "nodes": [
     {
       "parameters": {
@@ -17,46 +17,63 @@
     },
     {
       "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "data",
-              "value": "=[{\"Date Concat\":\"Jan 2023\",\"Year\":\"2023\",\"Month\":\"1\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"1/1/2023\",\"Value\":\"$73,498\"},{\"Date Concat\":\"Feb 2023\",\"Year\":\"2023\",\"Month\":\"2\",\"Financial Statements\":\"Income Statement\",\"Parent Account\":\"Revenue\",\"Account\":\"Revenue Tier 1\",\"Attribute\":\"2/1/2023\",\"Value\":\"$35,803\"}]"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "// Debug what we receive\nconst items = $input.all();\nconsole.log('=== INITIAL INPUT DEBUG ===');\nconsole.log('Number of items:', items.length);\n\nitems.forEach((item, idx) => {\n  console.log(`\\nItem ${idx}:`);\n  console.log('Has binary:', !!item.binary);\n  if (item.binary) {\n    console.log('Binary keys:', Object.keys(item.binary));\n    Object.keys(item.binary).forEach(key => {\n      const binary = item.binary[key];\n      console.log(`Binary[${key}]:`, {\n        fileName: binary.fileName,\n        mimeType: binary.mimeType,\n        fileSize: binary.fileSize\n      });\n    });\n  }\n});\n\n// Fix binary field if needed\nitems.forEach(item => {\n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0 && !item.binary.data) {\n      item.binary.data = item.binary[binaryKeys[0]];\n      console.log('Fixed binary field');\n    }\n  }\n});\n\nreturn items;"
       },
-      "id": "set",
-      "name": "Set Data",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 1,
-      "position": [450, 300]
+      "id": "debug-input",
+      "name": "Debug Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "respondWith": "text",
-        "responseBody": "={{ $json.data }}",
+        "operation": "spreadsheetFile",
+        "binaryPropertyName": "data",
+        "options": {
+          "rawData": false,
+          "readAsString": false,
+          "headerRow": true,
+          "includeEmptyCells": false,
+          "sheetName": "",
+          "range": ""
+        }
+      },
+      "id": "read-excel-simple",
+      "name": "Read Excel Simple",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Debug what Excel gives us\nconst items = $input.all();\nlet debugInfo = [];\nlet allData = [];\n\nconsole.log('\\n=== EXCEL OUTPUT DEBUG ===');\nconsole.log('Number of items from Excel:', items.length);\n\nitems.forEach((item, idx) => {\n  console.log(`\\n--- Item ${idx} ---`);\n  \n  const info = {\n    index: idx,\n    hasJson: !!item.json,\n    jsonType: typeof item.json,\n    isArray: Array.isArray(item.json)\n  };\n  \n  if (item.json) {\n    if (Array.isArray(item.json)) {\n      info.arrayLength = item.json.length;\n      info.firstRow = item.json[0];\n      info.lastRow = item.json[item.json.length - 1];\n      console.log('Array with', item.json.length, 'rows');\n      console.log('First row:', JSON.stringify(item.json[0]));\n      console.log('Last row:', JSON.stringify(item.json[item.json.length - 1]));\n      \n      // Store the actual data\n      allData.push({\n        type: 'array',\n        sheetIndex: idx,\n        data: item.json\n      });\n      \n    } else if (typeof item.json === 'object') {\n      const keys = Object.keys(item.json);\n      info.objectKeys = keys.slice(0, 10);\n      info.keyCount = keys.length;\n      console.log('Object with', keys.length, 'keys');\n      console.log('First 10 keys:', keys.slice(0, 10));\n      console.log('Sample value:', item.json[keys[0]]);\n      \n      // Store the actual data\n      allData.push({\n        type: 'object',\n        sheetIndex: idx,\n        keys: keys,\n        data: item.json\n      });\n    }\n  }\n  \n  debugInfo.push(info);\n});\n\n// Try different read approaches\nlet finalOutput = '\\n=== DATA EXTRACTION ATTEMPT ===\\n';\n\nallData.forEach(sheet => {\n  finalOutput += `\\nSheet ${sheet.sheetIndex} (${sheet.type}):\\n`;\n  \n  if (sheet.type === 'array' && sheet.data.length > 0) {\n    // For array data, show first 5 rows\n    sheet.data.slice(0, 5).forEach((row, idx) => {\n      finalOutput += `Row ${idx}: ${JSON.stringify(row)}\\n`;\n    });\n  } else if (sheet.type === 'object') {\n    // For object data, show structure\n    sheet.keys.slice(0, 5).forEach(key => {\n      finalOutput += `Column \"${key}\": ${JSON.stringify(sheet.data[key])}\\n`;\n    });\n  }\n});\n\n// Return both debug info and extracted data\nreturn [{\n  json: {\n    debugInfo: debugInfo,\n    extractedData: allData,\n    summary: finalOutput,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "debug-excel",
+      "name": "Debug Excel Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
         "options": {
           "responseHeaders": {
             "entries": [
               {
                 "name": "Access-Control-Allow-Origin",
                 "value": "*"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
               }
             ]
           }
         }
       },
-      "id": "respond",
-      "name": "Respond",
+      "id": "respond-debug",
+      "name": "Respond Debug",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [850, 300]
     }
   ],
   "pinData": {},
@@ -65,18 +82,40 @@
       "main": [
         [
           {
-            "node": "Set Data",
+            "node": "Debug Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Set Data": {
+    "Debug Input": {
       "main": [
         [
           {
-            "node": "Respond",
+            "node": "Read Excel Simple",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Excel Simple": {
+      "main": [
+        [
+          {
+            "node": "Debug Excel Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug Excel Data": {
+      "main": [
+        [
+          {
+            "node": "Respond Debug",
             "type": "main",
             "index": 0
           }

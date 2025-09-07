@@ -6,16 +6,24 @@
         "httpMethod": "POST",
         "path": "process-financials",
         "responseMode": "responseNode",
-        "options": {
-          "binaryPropertyOutput": "data"
-        }
+        "options": {}
       },
-      "id": "webhook",
+      "id": "3d729693-7fa1-403e-b399-b8fbb37f980e",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [100, 300],
+      "position": [250, 300],
       "webhookId": "process-financials"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fix binary field\nconst items = $input.all();\nitems.forEach(item => {\n  if (item.binary) {\n    const binaryKeys = Object.keys(item.binary);\n    if (binaryKeys.length > 0 && !item.binary.data) {\n      item.binary.data = item.binary[binaryKeys[0]];\n    }\n  }\n});\nreturn items;"
+      },
+      "id": "bf110b3a-48bc-44ac-9fb7-ec501ac7167c",
+      "name": "Fix Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
     },
     {
       "parameters": {
@@ -24,24 +32,29 @@
         "options": {
           "includeEmptyCells": true,
           "headerRow": false,
-          "readAsString": true
+          "readAsString": true,
+          "rawData": true,
+          "range": "",
+          "dataStartRow": 1,
+          "dataEndRow": "",
+          "sheetName": ""
         }
       },
-      "id": "read-spreadsheet",
-      "name": "Read Spreadsheet",
+      "id": "8faf9090-9f3c-40f8-a8b7-0beaed7deaa4",
+      "name": "Read Excel",
       "type": "n8n-nodes-base.spreadsheetFile",
       "typeVersion": 2,
-      "position": [300, 300]
+      "position": [550, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Process spreadsheet data into text for AI\nconst items = $input.all();\nlet allData = [];\n\n// Extract data from each item\nitems.forEach(item => {\n  if (Array.isArray(item.json)) {\n    // Multiple sheets\n    item.json.forEach(sheet => {\n      if (sheet && typeof sheet === 'object') {\n        allData.push(sheet);\n      }\n    });\n  } else if (item.json && typeof item.json === 'object') {\n    // Single sheet\n    allData.push(item.json);\n  }\n});\n\n// Convert to table format\nlet textTable = '';\nallData.forEach((data, index) => {\n  if (index > 0) textTable += '\\n\\n---NEW SHEET---\\n\\n';\n  \n  // Get all unique keys (columns)\n  const allKeys = new Set();\n  Object.values(data).forEach(row => {\n    if (row && typeof row === 'object') {\n      Object.keys(row).forEach(key => allKeys.add(key));\n    }\n  });\n  \n  const columns = Array.from(allKeys);\n  \n  // Add headers\n  textTable += columns.join('\\t') + '\\n';\n  \n  // Add data rows\n  Object.values(data).forEach(row => {\n    const rowData = columns.map(col => row[col] || '').join('\\t');\n    textTable += rowData + '\\n';\n  });\n});\n\n// If no structured data, try raw approach\nif (textTable.trim() === '') {\n  items.forEach(item => {\n    // Try to extract any data\n    const jsonStr = JSON.stringify(item.json, null, 2);\n    textTable += jsonStr + '\\n';\n  });\n}\n\nconsole.log('Extracted data:', textTable.substring(0, 500));\n\nreturn [{json: {spreadsheetData: textTable}}];"
+        "jsCode": "// Convert spreadsheet to readable text for AI\nconst items = $input.all();\nlet combinedText = '';\nlet validDataFound = false;\n\nconsole.log(`Processing ${items.length} items`);\n\nitems.forEach((item, idx) => {\n  const fileName = item.binary?.data?.fileName || `Sheet ${idx + 1}`;\n  \n  // Log what we're processing\n  console.log(`Processing item ${idx}:`, {\n    hasJson: !!item.json,\n    jsonType: typeof item.json,\n    jsonKeys: item.json ? Object.keys(item.json).slice(0, 5) : [],\n    jsonIsArray: Array.isArray(item.json)\n  });\n  \n  const data = item.json;\n  let sheetContent = '';\n  \n  // Handle different data structures\n  if (Array.isArray(data) && data.length > 0) {\n    // Array of rows - most common\n    data.forEach((row, rowIdx) => {\n      if (row && typeof row === 'object') {\n        const values = Object.values(row).map(v => {\n          // Handle different value types\n          if (v === null || v === undefined) return '';\n          if (typeof v === 'object') return JSON.stringify(v);\n          return String(v);\n        }).join('\\t');\n        if (values.trim()) {\n          sheetContent += values + '\\n';\n          validDataFound = true;\n        }\n      }\n    });\n  } else if (data && typeof data === 'object') {\n    // Single object - might be columns\n    const keys = Object.keys(data);\n    \n    // Check if it's column-based data\n    if (keys.length > 0) {\n      // First, output headers\n      sheetContent += keys.join('\\t') + '\\n';\n      \n      // Find max rows\n      let maxRows = 0;\n      keys.forEach(key => {\n        const col = data[key];\n        if (col && typeof col === 'object') {\n          maxRows = Math.max(maxRows, Object.keys(col).length);\n        }\n      });\n      \n      // Output rows\n      for (let i = 0; i < maxRows; i++) {\n        const rowValues = keys.map(key => {\n          const col = data[key];\n          if (col && typeof col === 'object') {\n            const rowKeys = Object.keys(col);\n            if (rowKeys[i]) {\n              const val = col[rowKeys[i]];\n              return val !== null && val !== undefined ? String(val) : '';\n            }\n          }\n          return '';\n        });\n        const rowStr = rowValues.join('\\t');\n        if (rowStr.trim()) {\n          sheetContent += rowStr + '\\n';\n          validDataFound = true;\n        }\n      }\n    }\n  }\n  \n  // Only add non-empty sheets\n  if (sheetContent.trim()) {\n    combinedText += `\\n=== ${fileName} ===\\n${sheetContent}`;\n  }\n});\n\nif (!validDataFound) {\n  console.error('No valid data found in any sheets');\n  // Try to provide debug info\n  const debugInfo = items.map((item, idx) => ({\n    index: idx,\n    hasJson: !!item.json,\n    jsonSample: item.json ? JSON.stringify(item.json).substring(0, 200) : 'no json'\n  }));\n  console.log('Debug info:', debugInfo);\n  throw new Error('No data could be extracted from the Excel file. The file might be empty or in an unsupported format.');\n}\n\nconsole.log('Data extracted successfully');\nconsole.log('First 500 chars:', combinedText.substring(0, 500));\n\nreturn [{json: {spreadsheetData: combinedText}}];"
       },
-      "id": "prepare-data",
-      "name": "Prepare Data",
+      "id": "135982f2-8cb5-4f67-8841-d6a848e9dcee",
+      "name": "Prepare for AI",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [500, 300]
+      "position": [700, 300]
     },
     {
       "parameters": {
@@ -53,42 +66,41 @@
         "messages": {
           "values": [
             {
-              "role": "system",
-              "content": "You are a financial data transformation expert. Transform financial statements into standardized format.\n\nINSTRUCTIONS:\n1. Identify if it's an Income Statement (has Revenue, COGS, Expenses) or Balance Sheet (has Assets, Liabilities, Cash)\n2. Parse the data structure - usually first row has dates/months, first column has account names\n3. Transform EVERY data cell into a separate row\n\nRequired columns for each row:\n- \"Date Concat\": Month Year (e.g., \"Jan 2023\")\n- \"Year\": Year as string (e.g., \"2023\") \n- \"Month\": Month number as string (e.g., \"1\")\n- \"Financial Statements\": \"Income Statement\" or \"Balance Sheet\"\n- \"Parent Account\": Category like \"Revenue\", \"COGS\", \"Assets\", etc.\n- \"Account\": The line item name\n- \"Attribute\": Date as M/D/YYYY (e.g., \"1/1/2023\")\n- \"Value\": Amount with $ and commas (e.g., \"$400,000\")\n\nPARSING TIPS:\n- Column headers often have dates like \"Jan 2023\", \"Feb 2023\", etc.\n- Row headers are account names\n- Values in cells are the amounts\n- Keep negative values with minus sign\n- Group accounts logically (all Revenue items under \"Revenue\" parent)\n\nReturn ONLY a JSON array, no explanations."
+              "content": "You are a financial data expert. Transform various financial statement formats into a standardized structure.\n\nYour task:\n1. Identify the type of statement (Income Statement, Balance Sheet, Cash Flow, etc.)\n2. Recognize the data structure (could be dates in columns, dates in rows, various layouts)\n3. Extract ALL data points and transform them\n\nOutput format - EVERY data point becomes a row with these exact columns:\n- \"Date Concat\": Month and year like \"Jan 2023\" \n- \"Year\": Year as string like \"2023\"\n- \"Month\": Month number as string like \"1\" for January\n- \"Financial Statements\": The statement type (\"Income Statement\", \"Balance Sheet\", etc.)\n- \"Parent Account\": The category/grouping (\"Revenue\", \"COGS\", \"Assets\", \"Liabilities\", etc.)\n- \"Account\": The specific line item name\n- \"Attribute\": Date in M/D/YYYY format like \"1/1/2023\"\n- \"Value\": Dollar amount with $ and commas like \"$123,456\" or \"-$123,456\"\n\nCommon patterns to recognize:\n- Excel serial dates (numbers like 44927 = Jan 1, 2023)\n- Account names usually in first column or first row\n- Dates might be in headers as months, quarters, or years\n- Values might be in thousands (add zeros if indicated)\n- Parent accounts might be explicitly shown or need to be inferred\n\nBe flexible - handle various formats but always output the same structure.\nReturn ONLY a valid JSON array, no explanations.",
+              "role": "system"
             },
             {
-              "role": "user",
-              "content": "Transform this financial data:\n\n{{ $json.spreadsheetData }}\n\nReturn a JSON array with all values transformed to the standard format."
+              "content": "Transform this financial data into the standardized format:\n\n{{ $json.spreadsheetData }}\n\nAnalyze the structure, identify all accounts and time periods, and return a JSON array with every data point transformed."
             }
           ]
         },
         "jsonOutput": true,
         "options": {
-          "temperature": 0.1,
-          "maxTokens": 16000
+          "maxTokens": 16000,
+          "temperature": 0.2
         }
       },
-      "id": "ai-transform",
+      "id": "80561117-04b9-4e2a-804f-69a0358982f7",
       "name": "AI Transform",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.3,
-      "position": [700, 300],
+      "position": [850, 300],
       "credentials": {
         "openAiApi": {
-          "id": "YOUR_OPENAI_CREDENTIALS_ID",
-          "name": "OpenAI API"
+          "id": "fU0gBDv1oGgR7tvS",
+          "name": "OpenAi account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Extract and validate AI response\nconst input = $input.first().json;\nlet finalData = [];\n\n// Try different response formats\nif (typeof input === 'string') {\n  try {\n    finalData = JSON.parse(input);\n  } catch (e) {\n    console.error('Parse error:', e);\n  }\n} else if (Array.isArray(input)) {\n  finalData = input;\n} else if (input.message) {\n  try {\n    finalData = typeof input.message === 'string' ? JSON.parse(input.message) : input.message;\n  } catch (e) {\n    console.error('Parse message error:', e);\n  }\n} else if (input.content) {\n  try {\n    finalData = typeof input.content === 'string' ? JSON.parse(input.content) : input.content;\n  } catch (e) {\n    console.error('Parse content error:', e);\n  }\n}\n\n// Ensure it's an array\nif (!Array.isArray(finalData)) {\n  console.error('Not an array:', finalData);\n  finalData = [];\n}\n\n// Validate and clean data\nconst cleanData = finalData.filter(row => row && typeof row === 'object').map(row => ({\n  \"Date Concat\": String(row[\"Date Concat\"] || ''),\n  \"Year\": String(row[\"Year\"] || ''),\n  \"Month\": String(row[\"Month\"] || ''),\n  \"Financial Statements\": String(row[\"Financial Statements\"] || ''),\n  \"Parent Account\": String(row[\"Parent Account\"] || ''),\n  \"Account\": String(row[\"Account\"] || ''),\n  \"Attribute\": String(row[\"Attribute\"] || ''),\n  \"Value\": String(row[\"Value\"] || '')\n}));\n\nconsole.log(`Cleaned ${cleanData.length} rows`);\n\nreturn [{json: {data: JSON.stringify(cleanData)}}];"
+        "jsCode": "// Extract and validate AI response\nconst input = $input.first().json;\nlet finalData = [];\n\nconsole.log('AI Response type:', typeof input);\nconsole.log('AI Response sample:', JSON.stringify(input).substring(0, 500));\n\n// Try various response formats\nif (Array.isArray(input)) {\n  finalData = input;\n} else if (typeof input === 'string') {\n  try {\n    finalData = JSON.parse(input);\n  } catch (e) {\n    console.error('Parse error:', e);\n  }\n} else if (input && typeof input === 'object') {\n  // Check for nested response\n  const possibleKeys = ['message', 'content', 'result', 'data', 'output'];\n  for (const key of possibleKeys) {\n    if (input[key]) {\n      try {\n        finalData = typeof input[key] === 'string' ? JSON.parse(input[key]) : input[key];\n        if (Array.isArray(finalData)) break;\n      } catch (e) {\n        continue;\n      }\n    }\n  }\n}\n\n// Ensure it's an array\nif (!Array.isArray(finalData)) {\n  console.error('Not an array:', finalData);\n  // Try to handle single object\n  if (finalData && typeof finalData === 'object') {\n    finalData = [finalData];\n  } else {\n    finalData = [];\n  }\n}\n\n// Clean and validate\nconst cleaned = finalData\n  .filter(row => row && typeof row === 'object')\n  .map(row => ({\n    \"Date Concat\": String(row[\"Date Concat\"] || ''),\n    \"Year\": String(row[\"Year\"] || ''),\n    \"Month\": String(row[\"Month\"] || ''),\n    \"Financial Statements\": String(row[\"Financial Statements\"] || ''),\n    \"Parent Account\": String(row[\"Parent Account\"] || ''),\n    \"Account\": String(row[\"Account\"] || ''),\n    \"Attribute\": String(row[\"Attribute\"] || ''),\n    \"Value\": String(row[\"Value\"] || '')\n  }));\n\nconsole.log(`Returning ${cleaned.length} rows`);\n\nif (cleaned.length === 0) {\n  throw new Error('No valid data returned from AI transformation');\n}\n\nreturn [{json: {data: JSON.stringify(cleaned)}}];"
       },
-      "id": "clean-data",
-      "name": "Clean Data",
+      "id": "239e4b7b-b9da-4546-95f5-f7b50b12b830",
+      "name": "Clean Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1000, 300]
     },
     {
       "parameters": {
@@ -109,11 +121,11 @@
           }
         }
       },
-      "id": "respond",
+      "id": "d2922d5c-14a8-47f3-a431-41b2e3cd92f4",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1100, 300]
+      "position": [1150, 300]
     }
   ],
   "pinData": {},
@@ -122,25 +134,36 @@
       "main": [
         [
           {
-            "node": "Read Spreadsheet",
+            "node": "Fix Binary",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Spreadsheet": {
+    "Fix Binary": {
       "main": [
         [
           {
-            "node": "Prepare Data",
+            "node": "Read Excel",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Data": {
+    "Read Excel": {
+      "main": [
+        [
+          {
+            "node": "Prepare for AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for AI": {
       "main": [
         [
           {
@@ -155,14 +178,14 @@
       "main": [
         [
           {
-            "node": "Clean Data",
+            "node": "Clean Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Clean Data": {
+    "Clean Response": {
       "main": [
         [
           {
@@ -178,7 +201,11 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "fixed-v1",
+  "versionId": "fixed-excel-reader",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5d26e528731fd716b7a8a5b53957bd6f1a66e64993502643fd3ab51cc16063e3"
+  },
   "id": "financial-processor-fixed",
   "tags": []
 }

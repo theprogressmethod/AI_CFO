@@ -1,46 +1,46 @@
-# Node modules
+# Dependencies
 node_modules/
-.npm
+.pnpm-store/
 
-# Build outputs
-.svelte-kit/
+# Build output
 build/
+.svelte-kit/
 dist/
 
-# Environment files
+# Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# IDE files
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Logs
-logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# Package manager files
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# n8n data
-.n8n/
-n8n-data/
-
-# Docker volumes
-docker-data/
-postgres-data/
+# Testing
+coverage/
+.nyc_output/
 
 # Temporary files
-*.tmp
-temp/
 tmp/
+temp/
+
+# n8n workflows (keep these local)
+n8n-workflow-*.json
+
+# Docker volumes
+.n8n/
+n8n_data/

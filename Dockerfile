@@ -1,37 +1,40 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Use Node.js LTS
+FROM node:18-alpine AS builder
 
+# Set working directory
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci
 
-# Copy application files
+# Copy source code
 COPY . .
 
 # Build the application
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Install serve to host static files
-RUN npm install -g serve
-
-# Copy built application from builder stage
+# Copy built app and dependencies
 COPY --from=builder /app/build ./build
+COPY --from=builder /app/package*.json ./
+
+# Install only production dependencies
+RUN npm ci --production
 
 # Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000', (r) => {r.statusCode === 200 ? process.exit(0) : process.exit(1)})"
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
 
 # Start the application
-CMD ["serve", "-s", "build", "-l", "3000"]
+CMD ["node", "build"]
